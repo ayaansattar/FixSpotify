@@ -42,3 +42,11 @@ model AuthToken {
   expiresAt    DateTime
   updatedAt    DateTime @updatedAt
 }
+
+model PlaylistPreference {
+  playlistId String   @id
+  position   Int
+  updatedAt  DateTime @updatedAt
+
+  @@unique([position])
+}
