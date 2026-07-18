@@ -8,6 +8,7 @@
 # Local environment and secrets
 .env
 .env*.local
+.env.production
 
 # Prisma generated client and local database
 /src/generated/prisma

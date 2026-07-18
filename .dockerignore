@@ -1,0 +1,25 @@
+node_modules
+.next
+out
+.git
+.gitignore
+npm-debug.log
+*.log
+
+# Secrets never belong in the image; they are injected via env_file at runtime.
+.env
+.env*.local
+
+# Local SQLite database and Prisma generated client (regenerated in the image).
+prisma/*.db
+prisma/*.db-journal
+src/generated
+
+# The one-time listening-history export is large and not needed to run the app.
+spotify_history
+
+# Editor and OS cruft
+.DS_Store
+.vscode
+.idea
+*.tsbuildinfo

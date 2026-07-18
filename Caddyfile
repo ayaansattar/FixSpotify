@@ -1,0 +1,5 @@
+# Caddy obtains and renews a Let's Encrypt certificate automatically for the
+# domain in APP_DOMAIN, then proxies HTTPS traffic to the Next.js container.
+{$APP_DOMAIN} {
+	reverse_proxy app:3000
+}
