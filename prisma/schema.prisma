@@ -1,0 +1,36 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Play {
+  id        String   @id @default(cuid())
+  trackId   String
+  trackName String
+  artistId  String
+  playedAt  DateTime
+  createdAt DateTime @default(now())
+
+  @@unique([trackId, playedAt])
+  @@index([trackId])
+  @@index([playedAt])
+}
+
+model GenreCache {
+  artistId String   @id
+  genres   String
+  updatedAt DateTime @updatedAt
+}
+
+model PlaylistSnapshot {
+  id         String   @id @default(cuid())
+  playlistId String
+  trackId    String
+  addedAt    DateTime @default(now())
+
+  @@index([playlistId])
+}
