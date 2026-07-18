@@ -56,6 +56,7 @@ export default async function Home() {
             <div className="mt-2 flex flex-col gap-2 text-sm font-semibold text-[#1ed760]">
               <Link href="/dashboard">Open least-listened dashboard →</Link>
               <Link href="/shuffle">Open fair shuffle →</Link>
+              <Link href="/genre-sort">Open genre sort →</Link>
             </div>
           ) : null}
         </div>

@@ -228,6 +228,9 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
           <Link className="text-[#a7b0aa] hover:text-white" href="/shuffle">
             Fair shuffle
           </Link>
+          <Link className="text-[#a7b0aa] hover:text-white" href="/genre-sort">
+            Genre sort
+          </Link>
           <Link
             className="text-[#a7b0aa] hover:text-white"
             href="/recently-deleted"

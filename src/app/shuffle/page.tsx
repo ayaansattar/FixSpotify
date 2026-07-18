@@ -104,6 +104,9 @@ function ShuffleShell({ children }: { children: React.ReactNode }) {
           <Link className="text-[#a7b0aa] hover:text-white" href="/dashboard">
             Dashboard
           </Link>
+          <Link className="text-[#a7b0aa] hover:text-white" href="/genre-sort">
+            Genre sort
+          </Link>
           <Link className="text-[#a7b0aa] hover:text-white" href="/">
             Home
           </Link>
