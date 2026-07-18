@@ -3,8 +3,9 @@ import { NextResponse } from "next/server";
 
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { getCachedPlaylistTracks } from "@/lib/playlist-cache";
 import {
-  getPlaylistTracks,
+  describeSpotifyError,
   setSpotifyShuffle,
   SpotifyApiError,
   startSpotifyPlayback,
@@ -52,7 +53,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const playlistTracks = await getPlaylistTracks(accessToken, playlistId);
+    const playlistTracks = await getCachedPlaylistTracks(accessToken, playlistId);
     const uniqueTracks = Array.from(
       new Map(playlistTracks.map((track) => [track.id, track])).values(),
     );
@@ -151,9 +152,7 @@ export async function POST(request: Request) {
         ? "No active Spotify device. Open Spotify and start playing something first."
         : error instanceof SpotifyApiError && error.status === 403
           ? "Spotify playback control requires Premium and an eligible active device."
-          : error instanceof Error
-            ? error.message
-            : "Unable to shuffle playlist.";
+          : describeSpotifyError(error, "Unable to shuffle playlist.");
 
     return NextResponse.json({ error: message }, { status: 502 });
   }

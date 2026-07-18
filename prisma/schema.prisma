@@ -70,3 +70,9 @@ model ShuffleDeck {
   usedTrackIds String
   updatedAt   DateTime @updatedAt
 }
+
+model PlaylistTrackCache {
+  playlistId String   @id
+  tracks     String
+  updatedAt  DateTime @updatedAt
+}

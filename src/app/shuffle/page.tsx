@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { ShufflePanel } from "@/components/shuffle-panel";
 import { authOptions } from "@/lib/auth";
 import { getPreferredPlaylists } from "@/lib/playlists";
-import { SpotifyApiError } from "@/lib/spotify";
+import { describeSpotifyError } from "@/lib/spotify";
 import { getValidAccessToken } from "@/lib/tokens";
 
 type ShufflePageProps = {
@@ -80,14 +80,7 @@ async function loadShufflePlaylists(accessToken: string) {
   try {
     return { playlists: await getPreferredPlaylists(accessToken) };
   } catch (error) {
-    return {
-      error:
-        error instanceof SpotifyApiError && error.status === 403
-          ? "Spotify only allows this app to inspect playlists you own or collaborate on."
-          : error instanceof Error
-            ? error.message
-            : "Unable to load playlists.",
-    };
+    return { error: describeSpotifyError(error, "Unable to load playlists.") };
   }
 }
 

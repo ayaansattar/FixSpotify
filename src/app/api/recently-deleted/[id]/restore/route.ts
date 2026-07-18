@@ -4,8 +4,11 @@ import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import {
+  getCachedPlaylistTracks,
+  invalidatePlaylistTracksCache,
+} from "@/lib/playlist-cache";
+import {
   addSpotifyPlaylistItem,
-  getPlaylistTracks,
   SpotifyApiError,
 } from "@/lib/spotify";
 import { getValidAccessToken } from "@/lib/tokens";
@@ -44,9 +47,10 @@ export async function POST(_request: Request, context: RouteContext) {
   }
 
   try {
-    const playlistTracks = await getPlaylistTracks(
+    const playlistTracks = await getCachedPlaylistTracks(
       accessToken,
       record.playlistId,
+      { force: true },
     );
     const alreadyPresent = playlistTracks.some(
       (track) => track.id === record.trackId || track.uri === record.trackUri,
@@ -58,6 +62,7 @@ export async function POST(_request: Request, context: RouteContext) {
         record.playlistId,
         record.trackUri,
       );
+      await invalidatePlaylistTracksCache(record.playlistId);
     }
 
     await db.deletedTrack.delete({ where: { id } });

@@ -71,6 +71,25 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+export function describeSpotifyError(error: unknown, fallback: string) {
+  if (error instanceof SpotifyApiError) {
+    if (error.status === 429) {
+      const waitMinutes = error.retryAfterMs
+        ? Math.ceil(error.retryAfterMs / 60_000)
+        : null;
+      return waitMinutes
+        ? `Spotify is rate limiting this app. Try again in about ${waitMinutes} minute${waitMinutes === 1 ? "" : "s"}.`
+        : "Spotify is rate limiting this app. Try again in a few minutes.";
+    }
+
+    if (error.status === 403) {
+      return "Spotify only allows this app to inspect playlists you own or collaborate on.";
+    }
+  }
+
+  return error instanceof Error ? error.message : fallback;
+}
+
 export async function refreshSpotifyToken(refreshToken: string) {
   const credentials = Buffer.from(
     `${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`,
@@ -124,8 +143,18 @@ export async function spotifyFetch<T>(
     const retryAfterMs =
       (Number.isFinite(retryAfterSeconds) ? retryAfterSeconds : 1) * 1000;
 
-    await sleep(retryAfterMs);
-    return spotifyFetch(accessToken, path, init, retries - 1);
+    // Only wait-and-retry for short limits. Long Retry-After values (Spotify
+    // can demand hours) would hang page renders; surface an error instead.
+    if (retryAfterMs <= 5_000) {
+      await sleep(retryAfterMs);
+      return spotifyFetch(accessToken, path, init, retries - 1);
+    }
+
+    throw new SpotifyApiError(
+      `Spotify API 429 for ${path}`,
+      429,
+      retryAfterMs,
+    );
   }
 
   if (!response.ok) {

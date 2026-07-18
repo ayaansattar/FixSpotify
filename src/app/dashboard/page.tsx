@@ -3,13 +3,14 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 
 import { DashboardFilters } from "@/components/dashboard-filters";
+import { RefreshButton } from "@/components/refresh-button";
 import { TrackList } from "@/components/track-list";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { getCachedPlaylistTracks } from "@/lib/playlist-cache";
 import { getPreferredPlaylists } from "@/lib/playlists";
 import {
-  getPlaylistTracks,
-  SpotifyApiError,
+  describeSpotifyError,
   type SpotifyPlaylist,
   type SpotifyPlaylistTrack,
 } from "@/lib/spotify";
@@ -104,9 +105,12 @@ export default async function Dashboard({ searchParams }: DashboardProps) {
               Least listened in the last {days} days
             </p>
           </div>
-          <p className="text-sm text-[#a7b0aa]">
-            {rankedTracks.length} unique tracks
-          </p>
+          <div className="flex flex-col items-end gap-2">
+            <RefreshButton playlistId={selectedPlaylist.id} />
+            <p className="text-sm text-[#a7b0aa]">
+              {rankedTracks.length} unique tracks
+            </p>
+          </div>
         </div>
 
         <TrackList
@@ -141,7 +145,7 @@ async function loadDashboardData(
       return { playlists, selectedPlaylist: null, rankedTracks: [] };
     }
 
-    const playlistTracks = await getPlaylistTracks(
+    const playlistTracks = await getCachedPlaylistTracks(
       accessToken,
       selectedPlaylist.id,
     );
@@ -167,14 +171,7 @@ async function loadDashboardData(
 
     return { playlists, selectedPlaylist, rankedTracks };
   } catch (error) {
-    return {
-      error:
-        error instanceof SpotifyApiError && error.status === 403
-          ? "Spotify only allows this app to inspect playlists you own or collaborate on."
-          : error instanceof Error
-            ? error.message
-            : "Unable to load your playlists.",
-    };
+    return { error: describeSpotifyError(error, "Unable to load your playlists.") };
   }
 }
 
