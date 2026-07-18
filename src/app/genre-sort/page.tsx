@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 
 import { GenreSortFilters } from "@/components/genre-sort-filters";
+import { GenreTrackList } from "@/components/genre-track-list";
 import { authOptions } from "@/lib/auth";
 import {
   getGenresForArtists,
@@ -29,6 +30,7 @@ type MatchStatus = "match" | "no-match" | "unknown";
 
 type AnalyzedTrack = {
   id: string;
+  uri: string;
   name: string;
   artistNames: string;
   genres: string[];
@@ -126,39 +128,7 @@ export default async function GenreSortPage({
         </div>
       </div>
 
-      <ul className="mt-5 space-y-3">
-        {tracks.map((track) => (
-          <li
-            className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/5 bg-white/5 px-5 py-4"
-            key={track.id}
-          >
-            <div className="min-w-0 flex-1">
-              <p className="truncate font-medium">{track.name}</p>
-              <p className="truncate text-sm text-[#a7b0aa]">
-                {track.artistNames}
-              </p>
-              {track.genres.length > 0 ? (
-                <p className="mt-1 truncate text-xs text-[#69736d]">
-                  {track.genres.join(", ")}
-                </p>
-              ) : null}
-            </div>
-
-            <div className="flex flex-col items-end gap-1">
-              <StatusBadge status={track.status} />
-              {track.suggestion &&
-              track.suggestion.playlistId !== selectedPlaylist.id ? (
-                <p className="text-xs text-[#a7b0aa]">
-                  Fits{" "}
-                  <span className="font-semibold text-white">
-                    {track.suggestion.playlistName}
-                  </span>
-                </p>
-              ) : null}
-            </div>
-          </li>
-        ))}
-      </ul>
+      <GenreTrackList tracks={tracks} />
 
       <p className="mt-5 text-xs leading-5 text-[#69736d]">
         Matches compare each track&apos;s artist genres (from Spotify) against
@@ -220,11 +190,15 @@ async function loadGenreSortData(
 
         return {
           id: track.id,
+          uri: track.uri,
           name: track.name,
           artistNames: track.artists.map((artist) => artist.name).join(", "),
           genres,
           status,
-          suggestion: suggestPlaylist(genres, otherPlaylists),
+          suggestion:
+            status === "no-match"
+              ? suggestPlaylist(genres, otherPlaylists)
+              : null,
         };
       })
       .sort(
@@ -237,30 +211,6 @@ async function loadGenreSortData(
   } catch (error) {
     return { error: describeSpotifyError(error, "Unable to analyze genres.") };
   }
-}
-
-function StatusBadge({ status }: { status: MatchStatus }) {
-  if (status === "match") {
-    return (
-      <span className="rounded-full border border-[#1ed760]/30 bg-[#1ed760]/10 px-3 py-1 text-xs font-semibold text-[#1ed760]">
-        Match
-      </span>
-    );
-  }
-
-  if (status === "no-match") {
-    return (
-      <span className="rounded-full border border-amber-300/30 bg-amber-300/10 px-3 py-1 text-xs font-semibold text-amber-200">
-        No match
-      </span>
-    );
-  }
-
-  return (
-    <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs font-semibold text-[#a7b0aa]">
-      No genre data
-    </span>
-  );
 }
 
 function GenreSortShell({ children }: { children: React.ReactNode }) {
