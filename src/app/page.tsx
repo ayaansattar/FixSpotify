@@ -1,10 +1,13 @@
 import { getServerSession } from "next-auth";
 
 import { AuthButton } from "@/components/auth-button";
+import { SyncButton } from "@/components/sync-button";
 import { authOptions } from "@/lib/auth";
+import { db } from "@/lib/db";
 
 export default async function Home() {
   const session = await getServerSession(authOptions);
+  const totalPlays = session?.user ? await db.play.count() : 0;
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-4xl items-center px-6 py-16">
@@ -21,12 +24,17 @@ export default async function Home() {
 
         <div className="mt-10 flex flex-col items-start gap-4">
           {session?.user ? (
-            <p className="text-lg">
-              Signed in as{" "}
-              <span className="font-semibold">
-                {session.user.name ?? session.user.email}
-              </span>
-            </p>
+            <>
+              <p className="text-lg">
+                Signed in as{" "}
+                <span className="font-semibold">
+                  {session.user.name ?? session.user.email}
+                </span>
+              </p>
+              <p className="text-sm text-[#a7b0aa]">
+                {totalPlays} play{totalPlays === 1 ? "" : "s"} logged in SQLite.
+              </p>
+            </>
           ) : (
             <p className="text-[#a7b0aa]">
               Connect your account to start building your dashboard.
@@ -39,7 +47,10 @@ export default async function Home() {
             </p>
           ) : null}
 
-          <AuthButton isSignedIn={Boolean(session?.user)} />
+          <div className="flex flex-wrap items-center gap-3">
+            <AuthButton isSignedIn={Boolean(session?.user)} />
+            {session?.user ? <SyncButton /> : null}
+          </div>
         </div>
       </section>
     </main>

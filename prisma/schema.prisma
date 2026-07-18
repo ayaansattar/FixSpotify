@@ -34,3 +34,11 @@ model PlaylistSnapshot {
 
   @@index([playlistId])
 }
+
+model AuthToken {
+  id           String   @id @default("spotify")
+  accessToken  String
+  refreshToken String
+  expiresAt    DateTime
+  updatedAt    DateTime @updatedAt
+}

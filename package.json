@@ -29,12 +29,14 @@
     "dotenv": "^17.4.2",
     "next": "^16.2.10",
     "next-auth": "^4.24.14",
+    "node-cron": "^4.6.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^26.1.1",
+    "@types/node-cron": "^3.0.11",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "eslint": "^9.39.5",
