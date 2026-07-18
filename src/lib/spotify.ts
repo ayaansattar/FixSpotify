@@ -240,3 +240,39 @@ export async function getPlaylistTracks(
 
   return tracks;
 }
+
+export async function startSpotifyPlayback(
+  accessToken: string,
+  trackUri: string,
+) {
+  await spotifyFetch<void>(accessToken, "/me/player/play", {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      uris: [trackUri],
+      position_ms: 0,
+    }),
+  });
+}
+
+export async function removeSpotifyPlaylistItem(
+  accessToken: string,
+  playlistId: string,
+  trackUri: string,
+) {
+  return spotifyFetch<{ snapshot_id: string }>(
+    accessToken,
+    `/playlists/${encodeURIComponent(playlistId)}/items`,
+    {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        items: [{ uri: trackUri }],
+      }),
+    },
+  );
+}

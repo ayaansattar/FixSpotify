@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 
 import { DashboardFilters } from "@/components/dashboard-filters";
+import { TrackList } from "@/components/track-list";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import {
@@ -109,33 +110,11 @@ export default async function Dashboard({ searchParams }: DashboardProps) {
           </p>
         </div>
 
-        {rankedTracks.length > 0 ? (
-          <ol className="mt-5 overflow-hidden rounded-2xl border border-white/10">
-            {rankedTracks.map((track, index) => (
-              <li
-                className="grid grid-cols-[2.5rem_1fr_auto] items-center gap-3 border-b border-white/10 px-4 py-4 last:border-b-0"
-                key={track.id}
-              >
-                <span className="text-sm tabular-nums text-[#69736d]">
-                  {index + 1}
-                </span>
-                <div className="min-w-0">
-                  <p className="truncate font-medium">{track.name}</p>
-                  <p className="truncate text-sm text-[#a7b0aa]">
-                    {track.artists.map((artist) => artist.name).join(", ")}
-                  </p>
-                </div>
-                <span className="rounded-full bg-white/10 px-3 py-1 text-sm tabular-nums">
-                  {track.playCount} {track.playCount === 1 ? "play" : "plays"}
-                </span>
-              </li>
-            ))}
-          </ol>
-        ) : (
-          <p className="mt-5 rounded-2xl border border-white/10 p-6 text-[#a7b0aa]">
-            This playlist has no available tracks.
-          </p>
-        )}
+        <TrackList
+          initialTracks={rankedTracks}
+          key={selectedPlaylist.id}
+          playlistId={selectedPlaylist.id}
+        />
 
         <p className="mt-5 text-xs leading-5 text-[#69736d]">
           Counts currently use the listening history collected since this app
