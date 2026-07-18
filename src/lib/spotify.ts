@@ -276,3 +276,23 @@ export async function removeSpotifyPlaylistItem(
     },
   );
 }
+
+export async function addSpotifyPlaylistItem(
+  accessToken: string,
+  playlistId: string,
+  trackUri: string,
+) {
+  return spotifyFetch<{ snapshot_id: string }>(
+    accessToken,
+    `/playlists/${encodeURIComponent(playlistId)}/items`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        uris: [trackUri],
+      }),
+    },
+  );
+}

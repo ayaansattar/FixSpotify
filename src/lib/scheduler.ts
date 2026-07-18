@@ -1,5 +1,6 @@
 import cron from "node-cron";
 
+import { db } from "@/lib/db";
 import { syncRecentlyPlayed } from "@/lib/sync";
 import { getValidAccessToken } from "@/lib/tokens";
 
@@ -27,6 +28,28 @@ async function runHourlySync() {
   }
 }
 
+async function purgeDeletedTrackHistory() {
+  try {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 7);
+    const result = await db.deletedTrack.deleteMany({
+      where: {
+        deletedAt: {
+          lt: cutoff,
+        },
+      },
+    });
+
+    if (result.count > 0) {
+      console.info(
+        `[scheduler] Purged ${result.count} deletion history entries older than seven days`,
+      );
+    }
+  } catch (error) {
+    console.error("[scheduler] Deletion history cleanup failed", error);
+  }
+}
+
 export function startScheduler() {
   if (globalThis.__spotifySchedulerStarted) {
     return;
@@ -38,5 +61,10 @@ export function startScheduler() {
     void runHourlySync();
   });
 
-  console.info("[scheduler] Hourly play sync scheduled");
+  cron.schedule("15 0 * * *", () => {
+    void purgeDeletedTrackHistory();
+  });
+
+  void purgeDeletedTrackHistory();
+  console.info("[scheduler] Hourly play sync and daily cleanup scheduled");
 }

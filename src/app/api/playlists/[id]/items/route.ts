@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 
 import { authOptions } from "@/lib/auth";
+import { db } from "@/lib/db";
 import {
   removeSpotifyPlaylistItem,
   SpotifyApiError,
@@ -23,13 +24,32 @@ export async function DELETE(request: Request, context: RouteContext) {
 
   const { id: playlistId } = await context.params;
   const body = (await request.json().catch(() => null)) as {
+    artistNames?: unknown;
+    playlistName?: unknown;
+    trackId?: unknown;
+    trackName?: unknown;
     trackUri?: unknown;
   } | null;
+  const artistNames = body?.artistNames;
+  const playlistName = body?.playlistName;
+  const trackId = body?.trackId;
+  const trackName = body?.trackName;
   const trackUri = body?.trackUri;
 
   if (
     !playlistId ||
     playlistId.length > 100 ||
+    typeof playlistName !== "string" ||
+    playlistName.length === 0 ||
+    playlistName.length > 500 ||
+    typeof trackId !== "string" ||
+    trackId.length === 0 ||
+    trackId.length > 100 ||
+    typeof trackName !== "string" ||
+    trackName.length === 0 ||
+    trackName.length > 500 ||
+    typeof artistNames !== "string" ||
+    artistNames.length > 1000 ||
     typeof trackUri !== "string" ||
     !trackUri.startsWith("spotify:track:") ||
     trackUri.length > 100
@@ -56,6 +76,27 @@ export async function DELETE(request: Request, context: RouteContext) {
       playlistId,
       trackUri,
     );
+
+    try {
+      await db.deletedTrack.create({
+        data: {
+          playlistId,
+          playlistName,
+          trackId,
+          trackName,
+          artistNames,
+          trackUri,
+        },
+      });
+    } catch (historyError) {
+      console.error("Track removed but deletion history was not saved", historyError);
+      return NextResponse.json({
+        removed: true,
+        snapshotId: result.snapshot_id,
+        warning: "Track removed, but it could not be added to deletion history.",
+      });
+    }
+
     return NextResponse.json({ removed: true, snapshotId: result.snapshot_id });
   } catch (error) {
     const message =

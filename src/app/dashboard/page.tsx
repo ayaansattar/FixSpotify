@@ -114,6 +114,7 @@ export default async function Dashboard({ searchParams }: DashboardProps) {
           initialTracks={rankedTracks}
           key={selectedPlaylist.id}
           playlistId={selectedPlaylist.id}
+          playlistName={selectedPlaylist.name}
         />
 
         <p className="mt-5 text-xs leading-5 text-[#69736d]">
@@ -251,6 +252,12 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
             href="/settings/playlists"
           >
             Choose playlists
+          </Link>
+          <Link
+            className="text-[#a7b0aa] hover:text-white"
+            href="/recently-deleted"
+          >
+            Recently deleted
           </Link>
           <Link className="text-[#a7b0aa] hover:text-white" href="/">
             Home

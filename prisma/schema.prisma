@@ -50,3 +50,17 @@ model PlaylistPreference {
 
   @@unique([position])
 }
+
+model DeletedTrack {
+  id          String   @id @default(cuid())
+  playlistId  String
+  playlistName String
+  trackId     String
+  trackName   String
+  artistNames String
+  trackUri    String
+  deletedAt   DateTime @default(now())
+
+  @@index([deletedAt])
+  @@index([playlistId])
+}

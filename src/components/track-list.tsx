@@ -15,6 +15,7 @@ type RankedTrack = {
 
 type TrackListProps = {
   playlistId: string;
+  playlistName: string;
   initialTracks: RankedTrack[];
 };
 
@@ -23,7 +24,11 @@ type Notice = {
   text: string;
 };
 
-export function TrackList({ playlistId, initialTracks }: TrackListProps) {
+export function TrackList({
+  playlistId,
+  playlistName,
+  initialTracks,
+}: TrackListProps) {
   const [tracks, setTracks] = useState(initialTracks);
   const [pendingTrackId, setPendingTrackId] = useState<string | null>(null);
   const [playingTrackId, setPlayingTrackId] = useState<string | null>(null);
@@ -82,10 +87,21 @@ export function TrackList({ playlistId, initialTracks }: TrackListProps) {
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ trackUri: track.uri }),
+          body: JSON.stringify({
+            artistNames: track.artists
+              .map((artist) => artist.name)
+              .join(", "),
+            playlistName,
+            trackId: track.id,
+            trackName: track.name,
+            trackUri: track.uri,
+          }),
         },
       );
-      const result = (await response.json()) as { error?: string };
+      const result = (await response.json()) as {
+        error?: string;
+        warning?: string;
+      };
 
       if (!response.ok) {
         throw new Error(result.error ?? "Unable to remove the track.");
@@ -96,7 +112,9 @@ export function TrackList({ playlistId, initialTracks }: TrackListProps) {
       );
       setNotice({
         kind: "success",
-        text: `Removed “${track.name}” from the playlist.`,
+        text:
+          result.warning ??
+          `Removed “${track.name}” and added it to Recently Deleted.`,
       });
     } catch (error) {
       setNotice({
