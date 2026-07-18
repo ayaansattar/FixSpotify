@@ -6,9 +6,8 @@ import { DashboardFilters } from "@/components/dashboard-filters";
 import { TrackList } from "@/components/track-list";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { getPreferredPlaylists } from "@/lib/playlists";
 import {
-  getCurrentSpotifyUser,
-  getCurrentUserPlaylists,
   getPlaylistTracks,
   SpotifyApiError,
   type SpotifyPlaylist,
@@ -132,31 +131,7 @@ async function loadDashboardData(
   days: number,
 ): Promise<DashboardData> {
   try {
-    const [spotifyUser, allPlaylists, preferences] = await Promise.all([
-      getCurrentSpotifyUser(accessToken),
-      getCurrentUserPlaylists(accessToken),
-      db.playlistPreference.findMany({
-        orderBy: {
-          position: "asc",
-        },
-      }),
-    ]);
-
-    // Spotify's 2026 Development Mode API only exposes playlist items for
-    // playlists owned by or collaborated on by the signed-in user. Restricting
-    // this list to owned playlists prevents followed public playlists from
-    // failing with a 403 when selected.
-    const ownedPlaylists = allPlaylists
-      .filter((playlist) => playlist.owner?.id === spotifyUser.id)
-      .sort((a, b) => a.name.localeCompare(b.name));
-    const ownedById = new Map(
-      ownedPlaylists.map((playlist) => [playlist.id, playlist]),
-    );
-    const preferredPlaylists = preferences
-      .map((preference) => ownedById.get(preference.playlistId))
-      .filter((playlist): playlist is SpotifyPlaylist => Boolean(playlist));
-    const playlists =
-      preferences.length > 0 ? preferredPlaylists : ownedPlaylists;
+    const playlists = await getPreferredPlaylists(accessToken);
     const selectedPlaylist =
       playlists.find((playlist) => playlist.id === requestedPlaylistId) ??
       playlists[0] ??
@@ -252,6 +227,9 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
             href="/settings/playlists"
           >
             Choose playlists
+          </Link>
+          <Link className="text-[#a7b0aa] hover:text-white" href="/shuffle">
+            Fair shuffle
           </Link>
           <Link
             className="text-[#a7b0aa] hover:text-white"

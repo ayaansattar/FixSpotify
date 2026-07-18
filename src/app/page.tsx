@@ -53,12 +53,10 @@ export default async function Home() {
             {session?.user ? <SyncButton /> : null}
           </div>
           {session?.user ? (
-            <Link
-              className="mt-2 text-sm font-semibold text-[#1ed760]"
-              href="/dashboard"
-            >
-              Open least-listened dashboard →
-            </Link>
+            <div className="mt-2 flex flex-col gap-2 text-sm font-semibold text-[#1ed760]">
+              <Link href="/dashboard">Open least-listened dashboard →</Link>
+              <Link href="/shuffle">Open fair shuffle →</Link>
+            </div>
           ) : null}
         </div>
       </section>

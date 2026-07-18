@@ -243,18 +243,34 @@ export async function getPlaylistTracks(
 
 export async function startSpotifyPlayback(
   accessToken: string,
-  trackUri: string,
+  trackUris: string | string[],
 ) {
+  const uris = Array.isArray(trackUris) ? trackUris : [trackUris];
+
+  if (uris.length === 0) {
+    throw new Error("No tracks to play.");
+  }
+
   await spotifyFetch<void>(accessToken, "/me/player/play", {
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      uris: [trackUri],
+      uris,
       position_ms: 0,
     }),
   });
+}
+
+export async function setSpotifyShuffle(accessToken: string, state: boolean) {
+  await spotifyFetch<void>(
+    accessToken,
+    `/me/player/shuffle?state=${state ? "true" : "false"}`,
+    {
+      method: "PUT",
+    },
+  );
 }
 
 export async function removeSpotifyPlaylistItem(

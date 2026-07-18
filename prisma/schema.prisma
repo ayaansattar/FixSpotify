@@ -64,3 +64,9 @@ model DeletedTrack {
   @@index([deletedAt])
   @@index([playlistId])
 }
+
+model ShuffleDeck {
+  playlistId  String   @id
+  usedTrackIds String
+  updatedAt   DateTime @updatedAt
+}
