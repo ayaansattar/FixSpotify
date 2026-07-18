@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getServerSession } from "next-auth";
 
 import { AuthButton } from "@/components/auth-button";
@@ -51,6 +52,14 @@ export default async function Home() {
             <AuthButton isSignedIn={Boolean(session?.user)} />
             {session?.user ? <SyncButton /> : null}
           </div>
+          {session?.user ? (
+            <Link
+              className="mt-2 text-sm font-semibold text-[#1ed760]"
+              href="/dashboard"
+            >
+              Open least-listened dashboard →
+            </Link>
+          ) : null}
         </div>
       </section>
     </main>

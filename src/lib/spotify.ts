@@ -25,6 +25,40 @@ type RecentlyPlayedResponse = {
   items: RecentlyPlayedItem[];
 };
 
+type Page<T> = {
+  items: T[];
+  total: number;
+};
+
+export type SpotifyPlaylist = {
+  id: string;
+  name: string;
+  owner?: {
+    id: string;
+  };
+  items?: {
+    total: number;
+  };
+  tracks?: {
+    total: number;
+  };
+};
+
+export type SpotifyPlaylistTrack = {
+  id: string;
+  name: string;
+  uri: string;
+  artists: Array<{
+    id: string;
+    name: string;
+  }>;
+};
+
+type PlaylistItem = {
+  item?: SpotifyPlaylistTrack | null;
+  track?: SpotifyPlaylistTrack | null;
+};
+
 type TokenResponse = {
   access_token?: string;
   expires_in?: number;
@@ -74,6 +108,7 @@ export async function spotifyFetch<T>(
   retries = 3,
 ): Promise<T> {
   const response = await fetch(`${SPOTIFY_API}${path}`, {
+    cache: "no-store",
     ...init,
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -118,4 +153,90 @@ export async function getRecentlyPlayed(accessToken: string, limit = 50) {
     accessToken,
     `/me/player/recently-played?limit=${limit}`,
   );
+}
+
+export async function getCurrentSpotifyUser(accessToken: string) {
+  return spotifyFetch<{ id: string }>(accessToken, "/me");
+}
+
+export async function getCurrentUserPlaylists(accessToken: string) {
+  const playlists: SpotifyPlaylist[] = [];
+  const limit = 50;
+  let offset = 0;
+
+  while (true) {
+    const page = await spotifyFetch<Page<SpotifyPlaylist>>(
+      accessToken,
+      `/me/playlists?limit=${limit}&offset=${offset}`,
+    );
+
+    playlists.push(...page.items.filter(Boolean));
+    offset += page.items.length;
+
+    if (page.items.length === 0 || offset >= page.total) {
+      break;
+    }
+  }
+
+  return playlists;
+}
+
+export async function getPlaylistTracks(
+  accessToken: string,
+  playlistId: string,
+) {
+  const limit = 50;
+  // Trim the response to just the fields we use; full playlist item payloads
+  // include album art, markets, etc. and are ~50x larger. Both `item` and
+  // `track` keys are requested to cover the 2026 field rename.
+  const fields = encodeURIComponent(
+    "total,items(item(id,name,uri,artists(id,name)),track(id,name,uri,artists(id,name)))",
+  );
+  const basePath = `/playlists/${encodeURIComponent(playlistId)}/items?fields=${fields}&limit=${limit}`;
+
+  const firstPage = await spotifyFetch<Page<PlaylistItem>>(
+    accessToken,
+    `${basePath}&offset=0`,
+  );
+
+  const pages = [firstPage.items];
+  const remainingOffsets: number[] = [];
+
+  for (let offset = limit; offset < firstPage.total; offset += limit) {
+    remainingOffsets.push(offset);
+  }
+
+  // Fetch remaining pages in small parallel batches: fast for large
+  // playlists without hammering Spotify's rate limit.
+  const batchSize = 5;
+
+  for (let i = 0; i < remainingOffsets.length; i += batchSize) {
+    const batch = remainingOffsets.slice(i, i + batchSize);
+    const results = await Promise.all(
+      batch.map((offset) =>
+        spotifyFetch<Page<PlaylistItem>>(
+          accessToken,
+          `${basePath}&offset=${offset}`,
+        ),
+      ),
+    );
+
+    for (const page of results) {
+      pages.push(page.items);
+    }
+  }
+
+  const tracks: SpotifyPlaylistTrack[] = [];
+
+  for (const pageItems of pages) {
+    for (const playlistItem of pageItems) {
+      const item = playlistItem.item ?? playlistItem.track;
+
+      if (item?.id && item.uri && item.artists) {
+        tracks.push(item);
+      }
+    }
+  }
+
+  return tracks;
 }
