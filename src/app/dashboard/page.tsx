@@ -16,10 +16,11 @@ import {
 } from "@/lib/spotify";
 import { getValidAccessToken } from "@/lib/tokens";
 
+// days: 0 means lifetime (no date cutoff).
 const windows = [
-  { days: 7, label: "7 days" },
-  { days: 30, label: "30 days" },
+  { days: 183, label: "6 months" },
   { days: 365, label: "1 year" },
+  { days: 0, label: "Lifetime" },
 ] as const;
 
 type DashboardProps = {
@@ -61,7 +62,7 @@ export default async function Dashboard({ searchParams }: DashboardProps) {
   const requestedDays = Number(params.days);
   const days = windows.some((window) => window.days === requestedDays)
     ? requestedDays
-    : 30;
+    : windows[0].days;
 
   const data = await loadDashboardData(
     accessToken,
@@ -102,7 +103,11 @@ export default async function Dashboard({ searchParams }: DashboardProps) {
           <div>
             <h2 className="text-2xl font-semibold">{selectedPlaylist.name}</h2>
             <p className="mt-1 text-sm text-[#a7b0aa]">
-              Least listened in the last {days} days
+              {days === 0
+                ? "Least listened across your full history"
+                : `Least listened in the last ${
+                    windows.find((window) => window.days === days)?.label
+                  }`}
             </p>
           </div>
           <div className="flex flex-col items-end gap-2">
@@ -121,9 +126,8 @@ export default async function Dashboard({ searchParams }: DashboardProps) {
         />
 
         <p className="mt-5 text-xs leading-5 text-[#69736d]">
-          Counts currently use the listening history collected since this app
-          started. Your requested Spotify export can backfill older history
-          when it arrives.
+          Counts combine your imported Spotify extended history with the plays
+          this app has synced since. Lifetime covers everything on record.
         </p>
       </DashboardShell>
   );
@@ -152,11 +156,19 @@ async function loadDashboardData(
     const uniqueTracks = Array.from(
       new Map(playlistTracks.map((track) => [track.id, track])).values(),
     );
-    const since = new Date();
-    since.setDate(since.getDate() - days);
+    let since: Date | null = null;
+
+    if (days > 0) {
+      since = new Date();
+      since.setDate(since.getDate() - days);
+    }
 
     const countByTrack = await getPlayCounts(
-      uniqueTracks.map((track) => track.id),
+      uniqueTracks.map((track) => ({
+        id: track.id,
+        name: track.name,
+        artistIds: track.artists.map((artist) => artist.id).filter(Boolean),
+      })),
       since,
     );
     const rankedTracks = uniqueTracks
@@ -175,11 +187,18 @@ async function loadDashboardData(
   }
 }
 
-async function getPlayCounts(trackIds: string[], since: Date) {
+type CountableTrack = {
+  id: string;
+  name: string;
+  artistIds: string[];
+};
+
+async function getPlayCounts(tracks: CountableTrack[], since: Date | null) {
   const countByTrack = new Map<string, number>();
   // SQLite limits query parameters (999 in Prisma's driver), so large
   // playlists must be counted in chunks.
   const chunkSize = 500;
+  const trackIds = tracks.map((track) => track.id);
 
   for (let i = 0; i < trackIds.length; i += chunkSize) {
     const chunk = trackIds.slice(i, i + chunkSize);
@@ -189,9 +208,7 @@ async function getPlayCounts(trackIds: string[], since: Date) {
         trackId: {
           in: chunk,
         },
-        playedAt: {
-          gte: since,
-        },
+        ...(since ? { playedAt: { gte: since } } : {}),
       },
       _count: {
         _all: true,
@@ -203,7 +220,66 @@ async function getPlayCounts(trackIds: string[], since: Date) {
     }
   }
 
+  const unmatched = tracks.filter((track) => !countByTrack.has(track.id));
+
+  if (unmatched.length === 0) {
+    return countByTrack;
+  }
+
+  // Spotify assigns different track ids to the same song on different album
+  // releases, so plays can be logged under an id that differs from the
+  // playlist's version. Match zero-play tracks against history by name,
+  // rejecting plays whose artist is known and doesn't match. (Imported
+  // history rows have artistId "unknown" and match by name alone.)
+  const playlistIds = new Set(trackIds);
+  const countsByName = new Map<
+    string,
+    Array<{ artistId: string; count: number }>
+  >();
+
+  const nameTrackGroups = await db.play.groupBy({
+    by: ["trackName", "trackId", "artistId"],
+    where: since ? { playedAt: { gte: since } } : {},
+    _count: { _all: true },
+  });
+
+  for (const group of nameTrackGroups) {
+    // Plays under a playlist track's own id are already counted above.
+    if (playlistIds.has(group.trackId)) {
+      continue;
+    }
+
+    const key = normalizeTrackName(group.trackName);
+    const entries = countsByName.get(key) ?? [];
+    entries.push({ artistId: group.artistId, count: group._count._all });
+    countsByName.set(key, entries);
+  }
+
+  for (const track of unmatched) {
+    const candidates = countsByName.get(normalizeTrackName(track.name)) ?? [];
+    const total = candidates
+      .filter(
+        (candidate) =>
+          candidate.artistId === "unknown" ||
+          track.artistIds.includes(candidate.artistId),
+      )
+      .reduce((sum, candidate) => sum + candidate.count, 0);
+
+    if (total > 0) {
+      countByTrack.set(track.id, total);
+    }
+  }
+
   return countByTrack;
+}
+
+function normalizeTrackName(name: string) {
+  return name
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
 function DashboardShell({ children }: { children: React.ReactNode }) {

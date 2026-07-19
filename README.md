@@ -11,7 +11,7 @@ Spotify account and works with Spotify's Development Mode.
 
 - Imports Spotify Extended Streaming History.
 - Automatically syncs recent plays every hour.
-- Ranks playlist tracks by least-listened over 7 days, 30 days, or 1 year.
+- Ranks playlist tracks by least-listened over 6 months, 1 year, or lifetime.
 - Removes tracks and keeps a seven-day recently deleted list.
 - Restores deleted tracks without adding duplicates.
 - Provides Fisher–Yates fair shuffle.
