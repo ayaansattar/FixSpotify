@@ -14,10 +14,11 @@ ENV NODE_ENV=production
 # SQLite lives on a mounted volume so data survives container rebuilds.
 ENV DATABASE_URL="file:/app/data/prod.db"
 
-# Install dependencies first for better layer caching. Dev dependencies are
-# kept because the Prisma CLI (used for migrations at startup) lives there.
+# Install dependencies first for better layer caching. --include=dev is
+# required because NODE_ENV=production would otherwise skip devDependencies,
+# and the build needs them (Tailwind/PostCSS, TypeScript, Prisma CLI).
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm ci --include=dev
 
 COPY . .
 
