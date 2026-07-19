@@ -1,25 +1,48 @@
 import { db } from "@/lib/db";
-import { getSpotifyArtists } from "@/lib/spotify";
+import { lookupArtistGenres } from "@/lib/musicbrainz";
 
 /**
- * Resolves genres for the given artists, reading from the GenreCache table
- * first and only asking Spotify for artists we have never seen. Genres for an
- * artist essentially never change, so cached entries are kept indefinitely.
+ * MusicBrainz allows ~1 request/second, so a large playlist can't be resolved
+ * in one page load. Each load fetches up to this many uncached artists; the
+ * rest resolve on subsequent visits. Results cache indefinitely in GenreCache.
+ */
+const MAX_LOOKUPS_PER_LOAD = 30;
+
+export type ArtistRef = {
+  id: string;
+  name: string;
+};
+
+export type GenreLookupResult = {
+  genresByArtist: Map<string, string[]>;
+  /** Artists still missing genre data because of the per-load lookup cap. */
+  pendingArtists: number;
+};
+
+/**
+ * Resolves genre tags for the given artists. Spotify removed genre data from
+ * its API for development-mode apps (February 2026), so genres come from
+ * MusicBrainz, matched by artist name and cached by Spotify artist id.
  */
 export async function getGenresForArtists(
-  accessToken: string,
-  artistIds: string[],
-): Promise<Map<string, string[]>> {
-  const uniqueIds = Array.from(new Set(artistIds.filter(Boolean)));
+  artists: ArtistRef[],
+): Promise<GenreLookupResult> {
+  const uniqueArtists = Array.from(
+    new Map(
+      artists
+        .filter((artist) => artist.id && artist.name)
+        .map((artist) => [artist.id, artist]),
+    ).values(),
+  );
   const genresByArtist = new Map<string, string[]>();
 
   // SQLite limits query parameters, so read the cache in chunks.
   const chunkSize = 500;
 
-  for (let i = 0; i < uniqueIds.length; i += chunkSize) {
-    const chunk = uniqueIds.slice(i, i + chunkSize);
+  for (let i = 0; i < uniqueArtists.length; i += chunkSize) {
+    const chunk = uniqueArtists.slice(i, i + chunkSize);
     const cached = await db.genreCache.findMany({
-      where: { artistId: { in: chunk } },
+      where: { artistId: { in: chunk.map((artist) => artist.id) } },
     });
 
     for (const entry of cached) {
@@ -27,36 +50,32 @@ export async function getGenresForArtists(
     }
   }
 
-  const missingIds = uniqueIds.filter((id) => !genresByArtist.has(id));
+  const missing = uniqueArtists.filter(
+    (artist) => !genresByArtist.has(artist.id),
+  );
+  const toLookUp = missing.slice(0, MAX_LOOKUPS_PER_LOAD);
+  const rows: Array<{ artistId: string; genres: string }> = [];
 
-  if (missingIds.length > 0) {
-    const artists = await getSpotifyArtists(accessToken, missingIds);
-    const fetchedIds = new Set<string>();
+  for (const artist of toLookUp) {
+    const genres = await lookupArtistGenres(artist.name);
 
-    for (const artist of artists) {
-      genresByArtist.set(artist.id, artist.genres ?? []);
-      fetchedIds.add(artist.id);
+    if (genres === null) {
+      // Lookup failed (network/rate limit); leave uncached to retry later.
+      continue;
     }
 
-    // Cache artists Spotify didn't return (deleted/local) as empty too, so we
-    // don't re-request them on every page load.
-    const rows = missingIds.map((artistId) => ({
-      artistId,
-      genres: JSON.stringify(
-        fetchedIds.has(artistId) ? (genresByArtist.get(artistId) ?? []) : [],
-      ),
-    }));
+    genresByArtist.set(artist.id, genres);
+    rows.push({ artistId: artist.id, genres: JSON.stringify(genres) });
+  }
 
-    for (const artistId of missingIds) {
-      if (!genresByArtist.has(artistId)) {
-        genresByArtist.set(artistId, []);
-      }
-    }
-
+  if (rows.length > 0) {
     await db.genreCache.createMany({ data: rows });
   }
 
-  return genresByArtist;
+  return {
+    genresByArtist,
+    pendingArtists: uniqueArtists.length - genresByArtist.size,
+  };
 }
 
 function parseGenres(value: string): string[] {

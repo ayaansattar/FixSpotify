@@ -15,7 +15,7 @@ export default async function PlaylistSettings() {
   const session = await getServerSession(authOptions);
 
   if (!session?.user) {
-    redirect("/");
+    redirect("/signin");
   }
 
   const accessToken =

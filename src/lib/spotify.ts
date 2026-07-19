@@ -264,37 +264,6 @@ export async function getPlaylistTracks(
   return tracks;
 }
 
-type SpotifyArtist = {
-  id: string;
-  name: string;
-  genres: string[];
-};
-
-/** Batch artist lookup; Spotify allows up to 50 ids per request. */
-export async function getSpotifyArtists(
-  accessToken: string,
-  artistIds: string[],
-) {
-  const artists: SpotifyArtist[] = [];
-  const batchSize = 50;
-
-  for (let i = 0; i < artistIds.length; i += batchSize) {
-    const batch = artistIds.slice(i, i + batchSize);
-    const response = await spotifyFetch<{ artists: Array<SpotifyArtist | null> }>(
-      accessToken,
-      `/artists?ids=${batch.map(encodeURIComponent).join(",")}`,
-    );
-
-    for (const artist of response.artists) {
-      if (artist?.id) {
-        artists.push(artist);
-      }
-    }
-  }
-
-  return artists;
-}
-
 export async function startSpotifyPlayback(
   accessToken: string,
   trackUris: string | string[],

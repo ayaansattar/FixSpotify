@@ -158,7 +158,7 @@ export function TrackList({
 
           return (
             <li
-              className="grid grid-cols-[2.5rem_minmax(0,1fr)_auto] items-center gap-3 border-b border-white/10 px-4 py-4 last:border-b-0"
+              className="grid grid-cols-[2.5rem_minmax(0,1fr)_auto] items-center gap-3 border-b border-white/10 px-4 py-4 transition-colors last:border-b-0 hover:bg-white/[0.03]"
               key={track.id}
             >
               <span className="text-sm tabular-nums text-[#69736d]">
@@ -171,11 +171,19 @@ export function TrackList({
                 </p>
               </div>
               <div className="flex flex-wrap items-center justify-end gap-2">
-                <span className="rounded-full bg-white/10 px-3 py-1 text-sm tabular-nums">
-                  {track.playCount} {track.playCount === 1 ? "play" : "plays"}
+                <span
+                  className={`rounded-full px-3 py-1 text-sm tabular-nums ${
+                    track.playCount === 0
+                      ? "border border-amber-300/25 bg-amber-300/10 text-amber-200"
+                      : "bg-white/10"
+                  }`}
+                >
+                  {track.playCount === 0
+                    ? "Never played"
+                    : `${track.playCount} ${track.playCount === 1 ? "play" : "plays"}`}
                 </span>
                 <button
-                  className="cursor-pointer rounded-full border border-white/15 px-3 py-1 text-sm hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="cursor-pointer rounded-full border border-[#1ed760]/30 px-3 py-1 text-sm text-[#1ed760] hover:bg-[#1ed760]/10 disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={pending}
                   onClick={() => void play(track)}
                   type="button"

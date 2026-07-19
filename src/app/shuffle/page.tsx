@@ -18,7 +18,7 @@ export default async function ShufflePage({ searchParams }: ShufflePageProps) {
   const session = await getServerSession(authOptions);
 
   if (!session?.user) {
-    redirect("/");
+    redirect("/signin");
   }
 
   const accessToken =

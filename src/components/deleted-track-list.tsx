@@ -98,7 +98,7 @@ export function DeletedTrackList({ initialTracks }: DeletedTrackListProps) {
 
           return (
             <li
-              className="grid grid-cols-[2.5rem_minmax(0,1fr)_auto] items-center gap-3 border-b border-white/10 px-4 py-4 last:border-b-0"
+              className="grid grid-cols-[2.5rem_minmax(0,1fr)_auto] items-center gap-3 border-b border-white/10 px-4 py-4 transition-colors last:border-b-0 hover:bg-white/[0.03]"
               key={track.id}
             >
               <span className="text-sm tabular-nums text-[#69736d]">

@@ -16,7 +16,10 @@ Spotify account and works with Spotify's Development Mode.
 - Restores deleted tracks without adding duplicates.
 - Provides Fisher–Yates fair shuffle.
 - Supports fresh shuffles and persistent no-repeat shuffle decks.
-- Analyzes artist genres and suggests better matching playlists.
+- Analyzes artist genre tags (from MusicBrainz) and suggests better matching
+  playlists. Spotify's API no longer provides genre data to Development Mode
+  apps, so genre lookups use the open MusicBrainz database, rate-limited to
+  about one artist per second and cached permanently after the first lookup.
 - Adds tracks to suggested playlists without duplicates.
 - Lets you select and order the playlists shown in the app.
 - Caches large playlist track lists in SQLite to reduce Spotify API usage.

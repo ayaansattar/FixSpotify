@@ -25,17 +25,16 @@ export default async function Home() {
 
         <div className="mt-10 flex flex-col items-start gap-4">
           {session?.user ? (
-            <>
-              <p className="text-lg">
-                Signed in as{" "}
-                <span className="font-semibold">
-                  {session.user.name ?? session.user.email}
-                </span>
-              </p>
-              <p className="text-sm text-[#a7b0aa]">
-                {totalPlays} play{totalPlays === 1 ? "" : "s"} logged in SQLite.
-              </p>
-            </>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span className="inline-flex items-center gap-2 rounded-full border border-[#1ed760]/25 bg-[#1ed760]/10 px-3 py-1 text-sm font-medium text-[#8cf0ae]">
+                <span className="h-1.5 w-1.5 rounded-full bg-[#1ed760]" />
+                {session.user.name ?? session.user.email}
+              </span>
+              <span className="text-sm tabular-nums text-[#a7b0aa]">
+                {totalPlays.toLocaleString()} play{totalPlays === 1 ? "" : "s"}{" "}
+                logged
+              </span>
+            </div>
           ) : (
             <p className="text-[#a7b0aa]">
               Connect your account to start building your dashboard.
@@ -52,15 +51,53 @@ export default async function Home() {
             <AuthButton isSignedIn={Boolean(session?.user)} />
             {session?.user ? <SyncButton /> : null}
           </div>
-          {session?.user ? (
-            <div className="mt-2 flex flex-col gap-2 text-sm font-semibold text-[#1ed760]">
-              <Link href="/dashboard">Open least-listened dashboard →</Link>
-              <Link href="/shuffle">Open fair shuffle →</Link>
-              <Link href="/genre-sort">Open genre sort →</Link>
-            </div>
-          ) : null}
         </div>
+
+        {session?.user ? (
+          <nav className="mt-10 grid gap-3 sm:grid-cols-3">
+            <HomeCard
+              description="Surface the tracks you skip past, ranked by plays."
+              href="/dashboard"
+              title="Least listened"
+            />
+            <HomeCard
+              description="True uniform shuffle with an optional no-repeat deck."
+              href="/shuffle"
+              title="Fair shuffle"
+            />
+            <HomeCard
+              description="Spot misfiled tracks and move them to a better home."
+              href="/genre-sort"
+              title="Genre sort"
+            />
+          </nav>
+        ) : null}
       </section>
     </main>
+  );
+}
+
+function HomeCard({
+  title,
+  description,
+  href,
+}: {
+  title: string;
+  description: string;
+  href: string;
+}) {
+  return (
+    <Link
+      className="group rounded-2xl border border-white/10 bg-white/[0.04] p-5 hover:border-[#1ed760]/40 hover:bg-[#1ed760]/[0.06]"
+      href={href}
+    >
+      <p className="flex items-center justify-between font-semibold">
+        {title}
+        <span className="text-[#1ed760] transition-transform duration-150 group-hover:translate-x-0.5">
+          →
+        </span>
+      </p>
+      <p className="mt-1.5 text-sm leading-6 text-[#a7b0aa]">{description}</p>
+    </Link>
   );
 }

@@ -10,7 +10,7 @@ export default async function RecentlyDeleted() {
   const session = await getServerSession(authOptions);
 
   if (!session?.user) {
-    redirect("/");
+    redirect("/signin");
   }
 
   const tracks = await getRecentDeletions();

@@ -11,24 +11,57 @@
   box-sizing: border-box;
 }
 
+html {
+  scrollbar-color: rgb(255 255 255 / 18%) transparent;
+}
+
 body {
   min-height: 100vh;
   margin: 0;
   background:
-    radial-gradient(circle at top, rgb(30 215 96 / 12%), transparent 34rem),
+    radial-gradient(ellipse 80rem 34rem at 20% -6rem, rgb(30 215 96 / 14%), transparent),
+    radial-gradient(ellipse 60rem 30rem at 110% 14rem, rgb(30 130 215 / 7%), transparent),
     var(--background);
+  background-attachment: fixed;
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: inherit;
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: -0.011em;
+}
+
+::selection {
+  background: rgb(30 215 96 / 30%);
 }
 
 button,
-a {
+a,
+select {
   transition:
     transform 150ms ease,
-    opacity 150ms ease;
+    opacity 150ms ease,
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease,
+    box-shadow 150ms ease;
 }
 
-button:hover,
+button:hover:not(:disabled),
 a:hover {
   transform: translateY(-1px);
+}
+
+button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+:focus-visible {
+  outline: 2px solid rgb(30 215 96 / 60%);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Soft elevation for the rounded cards used across every page. */
+.rounded-2xl,
+.rounded-3xl {
+  box-shadow: 0 1px 0 rgb(255 255 255 / 4%) inset;
 }

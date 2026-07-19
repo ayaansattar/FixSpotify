@@ -44,6 +44,7 @@ type GenreSortData =
       playlists: SpotifyPlaylist[];
       selectedPlaylist: SpotifyPlaylist | null;
       tracks: AnalyzedTrack[];
+      pendingArtists: number;
     };
 
 const statusRank: Record<MatchStatus, number> = {
@@ -58,7 +59,7 @@ export default async function GenreSortPage({
   const session = await getServerSession(authOptions);
 
   if (!session?.user) {
-    redirect("/");
+    redirect("/signin");
   }
 
   const accessToken =
@@ -101,7 +102,7 @@ export default async function GenreSortPage({
     );
   }
 
-  const { playlists, selectedPlaylist, tracks } = data;
+  const { playlists, selectedPlaylist, tracks, pendingArtists } = data;
   const matchCount = tracks.filter((track) => track.status === "match").length;
   const noMatchCount = tracks.filter(
     (track) => track.status === "no-match",
@@ -128,12 +129,22 @@ export default async function GenreSortPage({
         </div>
       </div>
 
+      {pendingArtists > 0 ? (
+        <p className="mt-5 rounded-xl border border-[#1ed760]/20 bg-[#1ed760]/5 px-4 py-3 text-sm text-[#8cf0ae]">
+          Genre data for {pendingArtists} artist
+          {pendingArtists === 1 ? "" : "s"} is still being collected from
+          MusicBrainz (its rate limit allows about one lookup per second).
+          Reload this page to fetch the next batch — results are saved, so
+          each visit gets further.
+        </p>
+      ) : null}
+
       <GenreTrackList tracks={tracks} />
 
       <p className="mt-5 text-xs leading-5 text-[#69736d]">
-        Matches compare each track&apos;s artist genres (from Spotify) against
-        your playlist names. Tracks marked &quot;No genre data&quot; have
-        artists Spotify hasn&apos;t tagged with genres.
+        Matches compare each track&apos;s artist genre tags (from the open
+        MusicBrainz database) against your playlist names. Tracks marked
+        &quot;No genre data&quot; have artists MusicBrainz hasn&apos;t tagged.
       </p>
     </GenreSortShell>
   );
@@ -151,7 +162,12 @@ async function loadGenreSortData(
       null;
 
     if (!selectedPlaylist) {
-      return { playlists, selectedPlaylist: null, tracks: [] };
+      return {
+        playlists,
+        selectedPlaylist: null,
+        tracks: [],
+        pendingArtists: 0,
+      };
     }
 
     const playlistTracks = await getCachedPlaylistTracks(
@@ -162,10 +178,11 @@ async function loadGenreSortData(
       new Map(playlistTracks.map((track) => [track.id, track])).values(),
     );
 
-    const artistIds = uniqueTracks.flatMap((track) =>
-      track.artists.map((artist) => artist.id).filter(Boolean),
+    const artistRefs = uniqueTracks.flatMap((track) =>
+      track.artists.map((artist) => ({ id: artist.id, name: artist.name })),
     );
-    const genresByArtist = await getGenresForArtists(accessToken, artistIds);
+    const { genresByArtist, pendingArtists } =
+      await getGenresForArtists(artistRefs);
 
     const otherPlaylists = playlists
       .filter((playlist) => playlist.id !== selectedPlaylist.id)
@@ -207,7 +224,7 @@ async function loadGenreSortData(
           a.name.localeCompare(b.name),
       );
 
-    return { playlists, selectedPlaylist, tracks };
+    return { playlists, selectedPlaylist, tracks, pendingArtists };
   } catch (error) {
     return { error: describeSpotifyError(error, "Unable to analyze genres.") };
   }

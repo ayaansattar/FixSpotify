@@ -84,6 +84,10 @@ async function refreshAccessToken(token: JWT): Promise<JWT> {
 }
 
 export const authOptions = {
+  pages: {
+    signIn: "/signin",
+    error: "/signin",
+  },
   providers: [
     SpotifyProvider({
       clientId: process.env.SPOTIFY_CLIENT_ID ?? "",
