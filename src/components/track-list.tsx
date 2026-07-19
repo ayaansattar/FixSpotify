@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+import { Dropdown } from "@/components/dropdown";
+
 type RankedTrack = {
   id: string;
   name: string;
@@ -35,6 +37,52 @@ export function TrackList({
   const [pendingTrackId, setPendingTrackId] = useState<string | null>(null);
   const [playingTrackId, setPlayingTrackId] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
+  const [filter, setFilter] = useState("all");
+
+  const playBuckets = [
+    { value: "1-2", label: "1–2 plays", matches: (count: number) => count >= 1 && count <= 2 },
+    { value: "3-5", label: "3–5 plays", matches: (count: number) => count >= 3 && count <= 5 },
+    { value: "6-10", label: "6–10 plays", matches: (count: number) => count >= 6 && count <= 10 },
+    { value: "10+", label: "10+ plays", matches: (count: number) => count >= 10 },
+    { value: "20+", label: "20+ plays", matches: (count: number) => count >= 20 },
+    { value: "30+", label: "30+ plays", matches: (count: number) => count >= 30 },
+  ];
+
+  const filterOptions = [
+    { value: "all", label: `All tracks (${tracks.length})` },
+    {
+      value: "unavailable",
+      label: `Unavailable (${tracks.filter((track) => !track.isPlayable).length})`,
+    },
+    {
+      value: "never",
+      label: `Never played (${tracks.filter((track) => track.playCount === 0).length})`,
+    },
+    ...playBuckets
+      .map((bucket) => ({
+        value: bucket.value,
+        label: `${bucket.label} (${
+          tracks.filter((track) => bucket.matches(track.playCount)).length
+        })`,
+        count: tracks.filter((track) => bucket.matches(track.playCount)).length,
+      }))
+      .filter((option) => option.count > 0 || option.value === filter)
+      .map(({ value, label }) => ({ value, label })),
+  ];
+
+  const activeBucket = playBuckets.find((bucket) => bucket.value === filter);
+  const visibleTracks = tracks.filter((track) => {
+    if (filter === "all") {
+      return true;
+    }
+    if (filter === "unavailable") {
+      return !track.isPlayable;
+    }
+    if (filter === "never") {
+      return track.playCount === 0;
+    }
+    return activeBucket ? activeBucket.matches(track.playCount) : true;
+  });
 
   async function play(track: RankedTrack) {
     if (!track.isPlayable) {
@@ -158,8 +206,28 @@ export function TrackList({
         </p>
       ) : null}
 
-      <ol className="mt-5 overflow-hidden rounded-2xl border border-white/10">
-        {tracks.map((track, index) => {
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+        <div className="w-56 text-sm font-medium">
+          <Dropdown
+            onChange={setFilter}
+            options={filterOptions}
+            value={filter}
+          />
+        </div>
+        {filter !== "all" ? (
+          <p className="text-sm text-[#a7b0aa]">
+            Showing {visibleTracks.length} of {tracks.length} tracks
+          </p>
+        ) : null}
+      </div>
+
+      {visibleTracks.length === 0 ? (
+        <p className="mt-4 rounded-2xl border border-white/10 p-6 text-[#a7b0aa]">
+          No tracks match this filter.
+        </p>
+      ) : (
+      <ol className="mt-4 overflow-hidden rounded-2xl border border-white/10">
+        {visibleTracks.map((track, index) => {
           const pending = pendingTrackId === track.id;
 
           return (
@@ -238,6 +306,7 @@ export function TrackList({
           );
         })}
       </ol>
+      )}
     </>
   );
 }
