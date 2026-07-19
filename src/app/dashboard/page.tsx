@@ -119,7 +119,7 @@ export default async function Dashboard({ searchParams }: DashboardProps) {
 
         <TrackList
           initialTracks={rankedTracks}
-          key={selectedPlaylist.id}
+          key={`${selectedPlaylist.id}:${days}`}
           playlistId={selectedPlaylist.id}
           playlistName={selectedPlaylist.name}
         />
