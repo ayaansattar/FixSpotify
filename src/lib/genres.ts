@@ -1,13 +1,6 @@
 import { db } from "@/lib/db";
 import { lookupArtistGenres } from "@/lib/musicbrainz";
 
-/**
- * MusicBrainz allows ~1 request/second, so a large playlist can't be resolved
- * in one page load. Each load fetches up to this many uncached artists; the
- * rest resolve on subsequent visits. Results cache indefinitely in GenreCache.
- */
-const MAX_LOOKUPS_PER_LOAD = 30;
-
 export type ArtistRef = {
   id: string;
   name: string;
@@ -15,25 +8,19 @@ export type ArtistRef = {
 
 export type GenreLookupResult = {
   genresByArtist: Map<string, string[]>;
-  /** Artists still missing genre data because of the per-load lookup cap. */
+  /** Artists still waiting for the background cache worker. */
   pendingArtists: number;
 };
 
 /**
- * Resolves genre tags for the given artists. Spotify removed genre data from
- * its API for development-mode apps (February 2026), so genres come from
- * MusicBrainz, matched by artist name and cached by Spotify artist id.
+ * Reads genre tags already collected by the background worker. Keeping remote
+ * MusicBrainz calls out of the request path makes the Genre Sort page render
+ * immediately even when a playlist contains hundreds of uncached artists.
  */
 export async function getGenresForArtists(
   artists: ArtistRef[],
 ): Promise<GenreLookupResult> {
-  const uniqueArtists = Array.from(
-    new Map(
-      artists
-        .filter((artist) => artist.id && artist.name)
-        .map((artist) => [artist.id, artist]),
-    ).values(),
-  );
+  const uniqueArtists = getUniqueArtists(artists);
   const genresByArtist = new Map<string, string[]>();
 
   // SQLite limits query parameters, so read the cache in chunks.
@@ -50,32 +37,70 @@ export async function getGenresForArtists(
     }
   }
 
-  const missing = uniqueArtists.filter(
-    (artist) => !genresByArtist.has(artist.id),
-  );
-  const toLookUp = missing.slice(0, MAX_LOOKUPS_PER_LOAD);
-  const rows: Array<{ artistId: string; genres: string }> = [];
-
-  for (const artist of toLookUp) {
-    const genres = await lookupArtistGenres(artist.name);
-
-    if (genres === null) {
-      // Lookup failed (network/rate limit); leave uncached to retry later.
-      continue;
-    }
-
-    genresByArtist.set(artist.id, genres);
-    rows.push({ artistId: artist.id, genres: JSON.stringify(genres) });
-  }
-
-  if (rows.length > 0) {
-    await db.genreCache.createMany({ data: rows });
-  }
-
   return {
     genresByArtist,
     pendingArtists: uniqueArtists.length - genresByArtist.size,
   };
+}
+
+export async function cacheGenresForArtists(
+  artists: ArtistRef[],
+  limit: number,
+) {
+  const uniqueArtists = getUniqueArtists(artists);
+  const cachedIds = new Set<string>();
+  const chunkSize = 500;
+
+  for (let i = 0; i < uniqueArtists.length; i += chunkSize) {
+    const chunk = uniqueArtists.slice(i, i + chunkSize);
+    const cached = await db.genreCache.findMany({
+      where: { artistId: { in: chunk.map((artist) => artist.id) } },
+      select: { artistId: true },
+    });
+
+    for (const entry of cached) {
+      cachedIds.add(entry.artistId);
+    }
+  }
+
+  const missing = uniqueArtists
+    .filter((artist) => !cachedIds.has(artist.id))
+    .slice(0, limit);
+  let saved = 0;
+  let failed = 0;
+
+  for (const artist of missing) {
+    const genres = await lookupArtistGenres(artist.name);
+
+    if (genres === null) {
+      failed += 1;
+      continue;
+    }
+
+    await db.genreCache.upsert({
+      where: { artistId: artist.id },
+      create: { artistId: artist.id, genres: JSON.stringify(genres) },
+      update: { genres: JSON.stringify(genres) },
+    });
+    saved += 1;
+  }
+
+  return {
+    attempted: missing.length,
+    saved,
+    failed,
+    remaining: Math.max(0, uniqueArtists.length - cachedIds.size - saved),
+  };
+}
+
+function getUniqueArtists(artists: ArtistRef[]) {
+  return Array.from(
+    new Map(
+      artists
+        .filter((artist) => artist.id && artist.name)
+        .map((artist) => [artist.id, artist]),
+    ).values(),
+  );
 }
 
 function parseGenres(value: string): string[] {

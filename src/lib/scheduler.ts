@@ -1,6 +1,7 @@
 import cron from "node-cron";
 
 import { db } from "@/lib/db";
+import { runGenreCacheWorker } from "@/lib/genre-cache-worker";
 import { syncRecentlyPlayed } from "@/lib/sync";
 import { getValidAccessToken } from "@/lib/tokens";
 
@@ -65,6 +66,13 @@ export function startScheduler() {
     void purgeDeletedTrackHistory();
   });
 
+  cron.schedule("10 * * * *", () => {
+    void runGenreCacheWorker();
+  });
+
   void purgeDeletedTrackHistory();
-  console.info("[scheduler] Hourly play sync and daily cleanup scheduled");
+  void runGenreCacheWorker();
+  console.info(
+    "[scheduler] Hourly play sync, genre cache, and daily cleanup scheduled",
+  );
 }

@@ -134,8 +134,8 @@ export default async function GenreSortPage({
           Genre data for {pendingArtists} artist
           {pendingArtists === 1 ? "" : "s"} is still being collected from
           MusicBrainz (its rate limit allows about one lookup per second).
-          Reload this page to fetch the next batch — results are saved, so
-          each visit gets further.
+          The background worker processes another batch every hour. Refresh
+          later to see newly completed matches.
         </p>
       ) : null}
 

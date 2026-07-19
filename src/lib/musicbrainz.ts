@@ -21,22 +21,33 @@ function sleep(ms: number) {
 }
 
 let lastRequestAt = 0;
+let requestQueue = Promise.resolve();
 
 async function rateLimitedFetch(url: string) {
-  const wait = lastRequestAt + REQUEST_INTERVAL_MS - Date.now();
+  const request = requestQueue.then(async () => {
+    const wait = lastRequestAt + REQUEST_INTERVAL_MS - Date.now();
 
-  if (wait > 0) {
-    await sleep(wait);
-  }
+    if (wait > 0) {
+      await sleep(wait);
+    }
 
-  lastRequestAt = Date.now();
+    lastRequestAt = Date.now();
 
-  return fetch(url, {
-    headers: {
-      "User-Agent": USER_AGENT,
-      Accept: "application/json",
-    },
+    return fetch(url, {
+      headers: {
+        "User-Agent": USER_AGENT,
+        Accept: "application/json",
+      },
+    });
   });
+
+  // Keep future requests moving even if this request rejects.
+  requestQueue = request.then(
+    () => undefined,
+    () => undefined,
+  );
+
+  return request;
 }
 
 /**

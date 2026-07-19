@@ -237,9 +237,11 @@ across deployments.
 
 ## Scheduled tasks
 
-The app runs two in-process cron tasks:
+The app runs three in-process cron tasks:
 
 - Every hour: fetch and store recent Spotify plays.
+- Every hour: look up genre tags for up to 50 uncached playlist artists using
+  MusicBrainz. A batch also runs when the server starts.
 - Daily: delete recently deleted records older than seven days.
 
 The application container must remain running for these jobs to execute.
