@@ -67,13 +67,11 @@ export async function POST(request: Request) {
 
     const allTrackIds = new Set(uniqueTracks.map((track) => track.id));
     let usedTrackIds: string[] = [];
-    let cycleStarted = false;
 
     if (mode === "deck" && !resetDeck) {
       const deck = await db.shuffleDeck.findUnique({
         where: { playlistId },
       });
-      cycleStarted = !deck;
       usedTrackIds = parseTrackIds(deck?.usedTrackIds).filter((trackId) =>
         allTrackIds.has(trackId),
       );
@@ -84,7 +82,6 @@ export async function POST(request: Request) {
       (resetDeck || usedTrackIds.length >= uniqueTracks.length)
     ) {
       usedTrackIds = [];
-      cycleStarted = true;
     }
 
     const usedSet = new Set(usedTrackIds);
@@ -130,14 +127,12 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({
-      cycleStarted,
       mode,
       playlistId,
       remaining:
         mode === "deck" ? Math.max(0, candidates.length - playTracks.length) : 0,
       total: uniqueTracks.length,
       playingCount,
-      queuedCount: 0,
       tracks: (mode === "deck" ? playTracks : shuffled).map((track, index) => ({
         position: index + 1,
         id: track.id,

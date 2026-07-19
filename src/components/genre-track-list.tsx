@@ -9,7 +9,7 @@ type SuggestedPlaylist = {
   playlistName: string;
 };
 
-export type GenreTrackListItem = {
+type GenreTrackListItem = {
   id: string;
   uri: string;
   name: string;

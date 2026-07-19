@@ -12,7 +12,7 @@ export class SpotifyApiError extends Error {
   }
 }
 
-export type RecentlyPlayedItem = {
+type RecentlyPlayedItem = {
   played_at: string;
   track: {
     id: string;
@@ -35,12 +35,6 @@ export type SpotifyPlaylist = {
   name: string;
   owner?: {
     id: string;
-  };
-  items?: {
-    total: number;
-  };
-  tracks?: {
-    total: number;
   };
 };
 
@@ -120,7 +114,7 @@ export async function refreshSpotifyToken(refreshToken: string) {
   };
 }
 
-export async function spotifyFetch<T>(
+async function spotifyFetch<T>(
   accessToken: string,
   path: string,
   init?: RequestInit,
@@ -270,7 +264,7 @@ export async function getPlaylistTracks(
   return tracks;
 }
 
-export type SpotifyArtist = {
+type SpotifyArtist = {
   id: string;
   name: string;
   genres: string[];

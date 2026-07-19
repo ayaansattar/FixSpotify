@@ -16,7 +16,6 @@ type ShuffledTrack = {
 };
 
 type ShuffleResult = {
-  cycleStarted: boolean;
   mode: "deck" | "fresh";
   remaining: number;
   total: number;

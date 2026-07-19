@@ -72,11 +72,7 @@ export async function DELETE(request: Request, context: RouteContext) {
   }
 
   try {
-    const result = await removeSpotifyPlaylistItem(
-      accessToken,
-      playlistId,
-      trackUri,
-    );
+    await removeSpotifyPlaylistItem(accessToken, playlistId, trackUri);
 
     await invalidatePlaylistTracksCache(playlistId);
 
@@ -95,12 +91,11 @@ export async function DELETE(request: Request, context: RouteContext) {
       console.error("Track removed but deletion history was not saved", historyError);
       return NextResponse.json({
         removed: true,
-        snapshotId: result.snapshot_id,
         warning: "Track removed, but it could not be added to deletion history.",
       });
     }
 
-    return NextResponse.json({ removed: true, snapshotId: result.snapshot_id });
+    return NextResponse.json({ removed: true });
   } catch (error) {
     const message =
       error instanceof SpotifyApiError && error.status === 403

@@ -26,15 +26,6 @@ model GenreCache {
   updatedAt DateTime @updatedAt
 }
 
-model PlaylistSnapshot {
-  id         String   @id @default(cuid())
-  playlistId String
-  trackId    String
-  addedAt    DateTime @default(now())
-
-  @@index([playlistId])
-}
-
 model AuthToken {
   id           String   @id @default("spotify")
   accessToken  String

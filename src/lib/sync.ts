@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { getRecentlyPlayed } from "@/lib/spotify";
 
-export type SyncResult = {
+type SyncResult = {
   fetched: number;
   inserted: number;
   skipped: number;
