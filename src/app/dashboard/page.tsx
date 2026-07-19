@@ -5,8 +5,8 @@ import { DashboardFilters } from "@/components/dashboard-filters";
 import { RefreshButton } from "@/components/refresh-button";
 import { TrackList } from "@/components/track-list";
 import { authOptions } from "@/lib/auth";
-import { db } from "@/lib/db";
 import { getCachedPlaylistTracks } from "@/lib/playlist-cache";
+import { getPlayCounts } from "@/lib/play-counts";
 import { getPreferredPlaylists } from "@/lib/playlists";
 import {
   describeSpotifyError,
@@ -184,101 +184,6 @@ async function loadDashboardData(
   } catch (error) {
     return { error: describeSpotifyError(error, "Unable to load your playlists.") };
   }
-}
-
-type CountableTrack = {
-  id: string;
-  name: string;
-  artistIds: string[];
-};
-
-async function getPlayCounts(tracks: CountableTrack[], since: Date | null) {
-  const countByTrack = new Map<string, number>();
-  // SQLite limits query parameters (999 in Prisma's driver), so large
-  // playlists must be counted in chunks.
-  const chunkSize = 500;
-  const trackIds = tracks.map((track) => track.id);
-
-  for (let i = 0; i < trackIds.length; i += chunkSize) {
-    const chunk = trackIds.slice(i, i + chunkSize);
-    const playCounts = await db.play.groupBy({
-      by: ["trackId"],
-      where: {
-        trackId: {
-          in: chunk,
-        },
-        ...(since ? { playedAt: { gte: since } } : {}),
-      },
-      _count: {
-        _all: true,
-      },
-    });
-
-    for (const play of playCounts) {
-      countByTrack.set(play.trackId, play._count._all);
-    }
-  }
-
-  const unmatched = tracks.filter((track) => !countByTrack.has(track.id));
-
-  if (unmatched.length === 0) {
-    return countByTrack;
-  }
-
-  // Spotify assigns different track ids to the same song on different album
-  // releases, so plays can be logged under an id that differs from the
-  // playlist's version. Match zero-play tracks against history by name,
-  // rejecting plays whose artist is known and doesn't match. (Imported
-  // history rows have artistId "unknown" and match by name alone.)
-  const playlistIds = new Set(trackIds);
-  const countsByName = new Map<
-    string,
-    Array<{ artistId: string; count: number }>
-  >();
-
-  const nameTrackGroups = await db.play.groupBy({
-    by: ["trackName", "trackId", "artistId"],
-    where: since ? { playedAt: { gte: since } } : {},
-    _count: { _all: true },
-  });
-
-  for (const group of nameTrackGroups) {
-    // Plays under a playlist track's own id are already counted above.
-    if (playlistIds.has(group.trackId)) {
-      continue;
-    }
-
-    const key = normalizeTrackName(group.trackName);
-    const entries = countsByName.get(key) ?? [];
-    entries.push({ artistId: group.artistId, count: group._count._all });
-    countsByName.set(key, entries);
-  }
-
-  for (const track of unmatched) {
-    const candidates = countsByName.get(normalizeTrackName(track.name)) ?? [];
-    const total = candidates
-      .filter(
-        (candidate) =>
-          candidate.artistId === "unknown" ||
-          track.artistIds.includes(candidate.artistId),
-      )
-      .reduce((sum, candidate) => sum + candidate.count, 0);
-
-    if (total > 0) {
-      countByTrack.set(track.id, total);
-    }
-  }
-
-  return countByTrack;
-}
-
-function normalizeTrackName(name: string) {
-  return name
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
 }
 
 function DashboardShell({ children }: { children: React.ReactNode }) {

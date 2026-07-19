@@ -4,13 +4,14 @@ import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getCachedPlaylistTracks } from "@/lib/playlist-cache";
+import { getPlayCounts } from "@/lib/play-counts";
 import {
   describeSpotifyError,
   setSpotifyShuffle,
   SpotifyApiError,
   startSpotifyPlayback,
 } from "@/lib/spotify";
-import { fisherYatesShuffle } from "@/lib/shuffle";
+import { fisherYatesShuffle, weightedRandomOrder } from "@/lib/shuffle";
 import { getValidAccessToken } from "@/lib/tokens";
 
 /** Safe batch size for /me/player/play to avoid 413 payload errors. */
@@ -29,7 +30,12 @@ export async function POST(request: Request) {
     play?: unknown;
     reset?: unknown;
   } | null;
-  const mode = body?.mode === "fresh" ? "fresh" : "deck";
+  const mode =
+    body?.mode === "fresh"
+      ? "fresh"
+      : body?.mode === "weighted"
+        ? "weighted"
+        : "deck";
   const playlistId = body?.playlistId;
   const shouldPlay = body?.play !== false;
   const resetDeck = body?.reset === true;
@@ -93,7 +99,24 @@ export async function POST(request: Request) {
       mode === "deck"
         ? uniqueTracks.filter((track) => !usedSet.has(track.id))
         : uniqueTracks;
-    const shuffled = fisherYatesShuffle([...candidates]);
+    const playCounts =
+      mode === "weighted"
+        ? await getPlayCounts(
+            candidates.map((track) => ({
+              id: track.id,
+              name: track.name,
+              artistIds: track.artists.map((artist) => artist.id),
+            })),
+            null,
+          )
+        : new Map<string, number>();
+    const shuffled =
+      mode === "weighted"
+        ? weightedRandomOrder(
+            [...candidates],
+            (track) => 1 / ((playCounts.get(track.id) ?? 0) + 1),
+          )
+        : fisherYatesShuffle([...candidates]);
     const playTracks = shuffled.slice(0, PLAY_BATCH);
     let playingCount = 0;
 
@@ -143,6 +166,8 @@ export async function POST(request: Request) {
         name: track.name,
         uri: track.uri,
         artists: track.artists.map((artist) => artist.name).join(", "),
+        playCount:
+          mode === "weighted" ? (playCounts.get(track.id) ?? 0) : undefined,
       })),
     });
   } catch (error) {

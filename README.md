@@ -13,10 +13,13 @@ Spotify account and works with Spotify's Development Mode.
 - Automatically syncs recent plays every hour.
 - Ranks playlist tracks by least-listened over 6 months, 1 year, or lifetime.
 - Identifies tracks that Spotify marks unavailable in the listener's market.
+- Searches and filters dashboard tracks by title, artist, availability, and
+  play-count ranges.
 - Removes tracks and keeps a seven-day recently deleted list.
 - Restores deleted tracks without adding duplicates.
 - Provides Fisher–Yates fair shuffle.
 - Supports fresh shuffles and persistent no-repeat shuffle decks.
+- Offers a weighted shuffle that favors tracks with fewer lifetime plays.
 - Analyzes artist genre tags (from MusicBrainz) and suggests better matching
   playlists. Spotify's API no longer provides genre data to Development Mode
   apps, so genre lookups use the open MusicBrainz database, rate-limited to

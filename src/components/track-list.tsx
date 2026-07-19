@@ -38,6 +38,7 @@ export function TrackList({
   const [playingTrackId, setPlayingTrackId] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [filter, setFilter] = useState("all");
+  const [query, setQuery] = useState("");
 
   const playBuckets = [
     { value: "1-2", label: "1–2 plays", matches: (count: number) => count >= 1 && count <= 2 },
@@ -71,17 +72,26 @@ export function TrackList({
   ];
 
   const activeBucket = playBuckets.find((bucket) => bucket.value === filter);
+  const normalizedQuery = query.trim().toLowerCase();
   const visibleTracks = tracks.filter((track) => {
-    if (filter === "all") {
-      return true;
-    }
-    if (filter === "unavailable") {
-      return !track.isPlayable;
-    }
-    if (filter === "never") {
-      return track.playCount === 0;
-    }
-    return activeBucket ? activeBucket.matches(track.playCount) : true;
+    const matchesFilter =
+      filter === "all"
+        ? true
+        : filter === "unavailable"
+          ? !track.isPlayable
+          : filter === "never"
+            ? track.playCount === 0
+            : activeBucket
+              ? activeBucket.matches(track.playCount)
+              : true;
+    const matchesSearch =
+      !normalizedQuery ||
+      track.name.toLowerCase().includes(normalizedQuery) ||
+      track.artists.some((artist) =>
+        artist.name.toLowerCase().includes(normalizedQuery),
+      );
+
+    return matchesFilter && matchesSearch;
   });
 
   async function play(track: RankedTrack) {
@@ -206,24 +216,46 @@ export function TrackList({
         </p>
       ) : null}
 
-      <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-        <div className="w-56 text-sm font-medium">
+      <div className="mt-5 grid gap-3 sm:grid-cols-[minmax(0,1fr)_14rem]">
+        <label className="relative block">
+          <span className="sr-only">Search tracks or artists</span>
+          <svg
+            aria-hidden
+            className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#69736d]"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            viewBox="0 0 24 24"
+          >
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-3.5-3.5" strokeLinecap="round" />
+          </svg>
+          <input
+            className="w-full rounded-xl border border-white/15 bg-[#111713] py-3 pl-11 pr-4 text-white placeholder:text-[#69736d] hover:border-white/30"
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search tracks or artists…"
+            type="search"
+            value={query}
+          />
+        </label>
+        <div className="text-sm font-medium">
           <Dropdown
             onChange={setFilter}
             options={filterOptions}
             value={filter}
           />
         </div>
-        {filter !== "all" ? (
-          <p className="text-sm text-[#a7b0aa]">
-            Showing {visibleTracks.length} of {tracks.length} tracks
-          </p>
-        ) : null}
       </div>
+
+      {filter !== "all" || normalizedQuery ? (
+        <p className="mt-3 text-sm text-[#a7b0aa]">
+          Showing {visibleTracks.length} of {tracks.length} tracks
+        </p>
+      ) : null}
 
       {visibleTracks.length === 0 ? (
         <p className="mt-4 rounded-2xl border border-white/10 p-6 text-[#a7b0aa]">
-          No tracks match this filter.
+          No tracks match your search and filter.
         </p>
       ) : (
       <ol className="mt-4 overflow-hidden rounded-2xl border border-white/10">

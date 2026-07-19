@@ -15,10 +15,11 @@ type ShuffledTrack = {
   name: string;
   uri: string;
   artists: string;
+  playCount?: number;
 };
 
 type ShuffleResult = {
-  mode: "deck" | "fresh";
+  mode: "deck" | "fresh" | "weighted";
   remaining: number;
   total: number;
   playingCount: number;
@@ -35,7 +36,7 @@ export function ShufflePanel({
   initialPlaylistId,
 }: ShufflePanelProps) {
   const [playlistId, setPlaylistId] = useState(initialPlaylistId);
-  const [mode, setMode] = useState<"deck" | "fresh">("deck");
+  const [mode, setMode] = useState<"deck" | "fresh" | "weighted">("deck");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ShuffleResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -98,13 +99,18 @@ export function ShufflePanel({
           <Dropdown
             disabled={loading}
             onChange={(nextMode) => {
-              setMode(nextMode === "fresh" ? "fresh" : "deck");
+              setMode(
+                nextMode === "fresh" || nextMode === "weighted"
+                  ? nextMode
+                  : "deck",
+              );
               setResult(null);
               setError(null);
             }}
             options={[
               { value: "deck", label: "No-repeat deck" },
               { value: "fresh", label: "Fresh random" },
+              { value: "weighted", label: "Favor least listened" },
             ]}
             value={mode}
           />
@@ -154,19 +160,31 @@ export function ShufflePanel({
                     : "The deck is empty. Next batch starts a new random cycle."}
                 </p>
               </>
+            ) : result.mode === "weighted" ? (
+              <>
+                <p>
+                  Playing a least-listened weighted order from {selectedName}.
+                </p>
+                <p className="mt-2 text-[#a7b0aa]">
+                  Tracks with fewer lifetime plays are more likely to appear
+                  earlier, while every playable track remains eligible.
+                </p>
+              </>
             ) : (
               <p>
                 Fair-shuffled {result.total} tracks from {selectedName}. Now
                 playing the first {result.playingCount} in exact shuffled order.
               </p>
             )}
-            {result.mode === "fresh" &&
+            {result.mode !== "deck" &&
             result.total > result.playingCount ? (
               <p className="mt-2 text-[#a7b0aa]">
                 Spotify accepts at most {result.playingCount} tracks per play
                 request, so playback covers the first {result.playingCount} of
-                this shuffle. Every track had an equal chance at every position
-                — hit Re-shuffle for a fresh order anytime.
+                this order.
+                {result.mode === "fresh"
+                  ? " Every track had an equal chance at every position."
+                  : " Re-shuffle anytime for a new weighted order."}
               </p>
             ) : null}
           </div>
@@ -184,6 +202,11 @@ export function ShufflePanel({
                   <p className="truncate font-medium">{track.name}</p>
                   <p className="truncate text-sm text-[#a7b0aa]">
                     {track.artists}
+                    {typeof track.playCount === "number"
+                      ? ` · ${track.playCount} lifetime ${
+                          track.playCount === 1 ? "play" : "plays"
+                        }`
+                      : ""}
                   </p>
                 </div>
                 <a
@@ -198,7 +221,7 @@ export function ShufflePanel({
             ))}
           </ol>
 
-          {result.mode === "fresh" && result.tracks.length > 100 ? (
+          {result.mode !== "deck" && result.tracks.length > 100 ? (
             <p className="text-sm text-[#69736d]">
               Showing the first 100 of {result.total} shuffled tracks.
             </p>
