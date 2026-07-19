@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 
+import { Dropdown } from "@/components/dropdown";
+
 type PlaylistOption = {
   id: string;
   name: string;
@@ -40,39 +42,33 @@ export function DashboardFilters({
   return (
     <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
       <div className="grid gap-4 sm:grid-cols-[1fr_12rem]">
-        <label className="grid gap-2 text-sm font-medium">
+        <div className="grid gap-2 text-sm font-medium">
           Playlist
-          <select
-            className="min-w-0 rounded-xl border border-white/15 bg-[#111713] px-4 py-3 text-white disabled:opacity-60"
+          <Dropdown
             disabled={isPending}
-            onChange={(event) => navigate(event.target.value, days)}
+            onChange={(playlistId) => navigate(playlistId, days)}
+            options={playlists.map((playlist) => ({
+              value: playlist.id,
+              label: playlist.name,
+            }))}
             value={selectedPlaylistId}
-          >
-            {playlists.map((playlist) => (
-              <option key={playlist.id} value={playlist.id}>
-                {playlist.name}
-              </option>
-            ))}
-          </select>
-        </label>
+          />
+        </div>
 
-        <label className="grid gap-2 text-sm font-medium">
+        <div className="grid gap-2 text-sm font-medium">
           Listening window
-          <select
-            className="rounded-xl border border-white/15 bg-[#111713] px-4 py-3 text-white disabled:opacity-60"
+          <Dropdown
             disabled={isPending}
-            onChange={(event) =>
-              navigate(selectedPlaylistId, Number(event.target.value))
+            onChange={(selectedDays) =>
+              navigate(selectedPlaylistId, Number(selectedDays))
             }
-            value={days}
-          >
-            {windows.map((window) => (
-              <option key={window.days} value={window.days}>
-                {window.label}
-              </option>
-            ))}
-          </select>
-        </label>
+            options={windows.map((window) => ({
+              value: String(window.days),
+              label: window.label,
+            }))}
+            value={String(days)}
+          />
+        </div>
       </div>
 
       {isPending ? (

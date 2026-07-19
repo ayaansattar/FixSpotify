@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 
+import { Dropdown } from "@/components/dropdown";
+
 type PlaylistOption = {
   id: string;
   name: string;
@@ -22,27 +24,24 @@ export function GenreSortFilters({
 
   return (
     <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
-      <label className="grid gap-2 text-sm font-medium">
+      <div className="grid gap-2 text-sm font-medium">
         Playlist
-        <select
-          className="min-w-0 rounded-xl border border-white/15 bg-[#111713] px-4 py-3 text-white disabled:opacity-60"
+        <Dropdown
           disabled={isPending}
-          onChange={(event) =>
+          onChange={(playlistId) =>
             startTransition(() => {
               router.push(
-                `/genre-sort?playlist=${encodeURIComponent(event.target.value)}`,
+                `/genre-sort?playlist=${encodeURIComponent(playlistId)}`,
               );
             })
           }
+          options={playlists.map((playlist) => ({
+            value: playlist.id,
+            label: playlist.name,
+          }))}
           value={selectedPlaylistId}
-        >
-          {playlists.map((playlist) => (
-            <option key={playlist.id} value={playlist.id}>
-              {playlist.name}
-            </option>
-          ))}
-        </select>
-      </label>
+        />
+      </div>
 
       {isPending ? (
         <p className="mt-4 flex items-center gap-2 text-sm text-[#a7b0aa]">

@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+import { Dropdown } from "@/components/dropdown";
+
 type PlaylistOption = {
   id: string;
   name: string;
@@ -74,42 +76,39 @@ export function ShufflePanel({
   return (
     <div className="space-y-6">
       <div className="grid gap-4 rounded-2xl border border-white/10 bg-white/5 p-5 sm:grid-cols-[1fr_13rem_auto_auto] sm:items-end">
-        <label className="grid gap-2 text-sm font-medium">
+        <div className="grid gap-2 text-sm font-medium">
           Playlist
-          <select
-            className="min-w-0 rounded-xl border border-white/15 bg-[#111713] px-4 py-3 text-white disabled:opacity-60"
+          <Dropdown
             disabled={loading}
-            onChange={(event) => {
-              setPlaylistId(event.target.value);
+            onChange={(nextPlaylistId) => {
+              setPlaylistId(nextPlaylistId);
               setResult(null);
               setError(null);
             }}
+            options={playlists.map((playlist) => ({
+              value: playlist.id,
+              label: playlist.name,
+            }))}
             value={playlistId}
-          >
-            {playlists.map((playlist) => (
-              <option key={playlist.id} value={playlist.id}>
-                {playlist.name}
-              </option>
-            ))}
-          </select>
-        </label>
+          />
+        </div>
 
-        <label className="grid gap-2 text-sm font-medium">
+        <div className="grid gap-2 text-sm font-medium">
           Shuffle mode
-          <select
-            className="rounded-xl border border-white/15 bg-[#111713] px-4 py-3 text-white disabled:opacity-60"
+          <Dropdown
             disabled={loading}
-            onChange={(event) => {
-              setMode(event.target.value === "fresh" ? "fresh" : "deck");
+            onChange={(nextMode) => {
+              setMode(nextMode === "fresh" ? "fresh" : "deck");
               setResult(null);
               setError(null);
             }}
+            options={[
+              { value: "deck", label: "No-repeat deck" },
+              { value: "fresh", label: "Fresh random" },
+            ]}
             value={mode}
-          >
-            <option value="deck">No-repeat deck</option>
-            <option value="fresh">Fresh random</option>
-          </select>
-        </label>
+          />
+        </div>
 
         <button
           className="cursor-pointer rounded-xl bg-[#1ed760] px-5 py-3 font-semibold text-[#07150c] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
