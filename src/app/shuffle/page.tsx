@@ -87,30 +87,12 @@ async function loadShufflePlaylists(accessToken: string) {
 function ShuffleShell({ children }: { children: React.ReactNode }) {
   return (
     <main className="mx-auto min-h-screen w-full max-w-5xl px-6 py-10 sm:py-16">
-      <header className="mb-8 flex items-start justify-between gap-4">
-        <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#1ed760]">
-            Spotify Manager
-          </p>
-          <h1 className="mt-2 text-3xl font-bold tracking-tight">
-            Fair shuffle
-          </h1>
-          <p className="mt-2 max-w-2xl text-sm text-[#a7b0aa]">
-            Builds a uniform-random order with Fisher–Yates, turns off Spotify’s
-            shuffle, and plays that exact sequence on your active device.
-          </p>
-        </div>
-        <nav className="flex items-center gap-4 text-sm">
-          <Link className="text-[#a7b0aa] hover:text-white" href="/dashboard">
-            Dashboard
-          </Link>
-          <Link className="text-[#a7b0aa] hover:text-white" href="/genre-sort">
-            Genre sort
-          </Link>
-          <Link className="text-[#a7b0aa] hover:text-white" href="/">
-            Home
-          </Link>
-        </nav>
+      <header className="mb-8">
+        <h1 className="text-3xl font-bold tracking-tight">Fair shuffle</h1>
+        <p className="mt-2 max-w-2xl text-sm text-[#a7b0aa]">
+          Builds a uniform-random order with Fisher–Yates, turns off Spotify’s
+          shuffle, and plays that exact sequence on your active device.
+        </p>
       </header>
       {children}
     </main>

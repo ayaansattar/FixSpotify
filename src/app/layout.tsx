@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 
+import { SiteHeader } from "@/components/site-header";
+
 import "./globals.css";
 
 const inter = Inter({
@@ -9,7 +11,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Spotify Manager",
+  title: "FixSpotify",
   description: "Manage your Spotify listening history and playlists.",
 };
 
@@ -20,7 +22,10 @@ export default function RootLayout({
 }>) {
   return (
     <html className={inter.className} lang="en">
-      <body>{children}</body>
+      <body>
+        <SiteHeader />
+        {children}
+      </body>
     </html>
   );
 }

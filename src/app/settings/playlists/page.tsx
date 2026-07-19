@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 
@@ -94,24 +93,13 @@ async function loadPlaylistSettings(accessToken: string) {
 function SettingsShell({ children }: { children: React.ReactNode }) {
   return (
     <main className="mx-auto min-h-screen w-full max-w-6xl px-6 py-10 sm:py-16">
-      <header className="mb-8 flex items-center justify-between gap-4">
-        <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#1ed760]">
-            Spotify Manager
-          </p>
-          <h1 className="mt-2 text-3xl font-bold tracking-tight">
-            Playlist settings
-          </h1>
-          <p className="mt-2 text-sm text-[#a7b0aa]">
-            Choose what appears in the dashboard and arrange its order.
-          </p>
-        </div>
-        <Link
-          className="text-sm text-[#a7b0aa] hover:text-white"
-          href="/dashboard"
-        >
-          Dashboard
-        </Link>
+      <header className="mb-8">
+        <h1 className="text-3xl font-bold tracking-tight">
+          Playlist settings
+        </h1>
+        <p className="mt-2 text-sm text-[#a7b0aa]">
+          Choose what appears in the dashboard and arrange its order.
+        </p>
       </header>
       {children}
     </main>

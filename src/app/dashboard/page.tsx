@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 
@@ -285,38 +284,10 @@ function normalizeTrackName(name: string) {
 function DashboardShell({ children }: { children: React.ReactNode }) {
   return (
     <main className="mx-auto min-h-screen w-full max-w-5xl px-6 py-10 sm:py-16">
-      <header className="mb-8 flex items-center justify-between gap-4">
-        <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#1ed760]">
-            Spotify Manager
-          </p>
-          <h1 className="mt-2 text-3xl font-bold tracking-tight">
-            Least-listened tracks
-          </h1>
-        </div>
-        <nav className="flex items-center gap-4 text-sm">
-          <Link
-            className="text-[#a7b0aa] hover:text-white"
-            href="/settings/playlists"
-          >
-            Choose playlists
-          </Link>
-          <Link className="text-[#a7b0aa] hover:text-white" href="/shuffle">
-            Fair shuffle
-          </Link>
-          <Link className="text-[#a7b0aa] hover:text-white" href="/genre-sort">
-            Genre sort
-          </Link>
-          <Link
-            className="text-[#a7b0aa] hover:text-white"
-            href="/recently-deleted"
-          >
-            Recently deleted
-          </Link>
-          <Link className="text-[#a7b0aa] hover:text-white" href="/">
-            Home
-          </Link>
-        </nav>
+      <header className="mb-8">
+        <h1 className="text-3xl font-bold tracking-tight">
+          Least-listened tracks
+        </h1>
       </header>
       {children}
     </main>

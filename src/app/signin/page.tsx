@@ -66,11 +66,6 @@ export default async function SignInPage({ searchParams }: SignInPageProps) {
           <FeatureItem>Fair shuffle with a no-repeat deck</FeatureItem>
           <FeatureItem>Genre checks and playlist cleanup</FeatureItem>
         </ul>
-
-        <p className="mt-8 text-xs leading-5 text-[#69736d]">
-          Single-user app. Your data stays in your own database — nothing is
-          shared.
-        </p>
       </section>
     </main>
   );
