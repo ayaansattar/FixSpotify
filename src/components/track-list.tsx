@@ -6,6 +6,8 @@ type RankedTrack = {
   id: string;
   name: string;
   uri: string;
+  isPlayable: boolean;
+  availabilityReason?: string;
   artists: Array<{
     id: string;
     name: string;
@@ -35,6 +37,10 @@ export function TrackList({
   const [notice, setNotice] = useState<Notice | null>(null);
 
   async function play(track: RankedTrack) {
+    if (!track.isPlayable) {
+      return;
+    }
+
     setPendingTrackId(track.id);
     setNotice(null);
 
@@ -158,7 +164,11 @@ export function TrackList({
 
           return (
             <li
-              className="grid grid-cols-[2.5rem_minmax(0,1fr)_auto] items-center gap-3 border-b border-white/10 px-4 py-4 transition-colors last:border-b-0 hover:bg-white/[0.03]"
+              className={`grid grid-cols-[2.5rem_minmax(0,1fr)_auto] items-center gap-3 border-b border-white/10 px-4 py-4 transition-colors last:border-b-0 ${
+                track.isPlayable
+                  ? "hover:bg-white/[0.03]"
+                  : "bg-red-300/[0.025]"
+              }`}
               key={track.id}
             >
               <span className="text-sm tabular-nums text-[#69736d]">
@@ -182,18 +192,31 @@ export function TrackList({
                     ? "Never played"
                     : `${track.playCount} ${track.playCount === 1 ? "play" : "plays"}`}
                 </span>
-                <button
-                  className="cursor-pointer rounded-full border border-[#1ed760]/30 px-3 py-1 text-sm text-[#1ed760] hover:bg-[#1ed760]/10 disabled:cursor-not-allowed disabled:opacity-50"
-                  disabled={pending}
-                  onClick={() => void play(track)}
-                  type="button"
-                >
-                  {pending
-                    ? "Working…"
-                    : playingTrackId === track.id
-                      ? "Playing"
-                      : "Play"}
-                </button>
+                {track.isPlayable ? (
+                  <button
+                    className="cursor-pointer rounded-full border border-[#1ed760]/30 px-3 py-1 text-sm text-[#1ed760] hover:bg-[#1ed760]/10 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={pending}
+                    onClick={() => void play(track)}
+                    type="button"
+                  >
+                    {pending
+                      ? "Working…"
+                      : playingTrackId === track.id
+                        ? "Playing"
+                        : "Play"}
+                  </button>
+                ) : (
+                  <span
+                    className="rounded-full border border-red-300/25 bg-red-300/10 px-3 py-1 text-sm text-red-200"
+                    title={
+                      track.availabilityReason
+                        ? `Spotify restriction: ${track.availabilityReason}`
+                        : "This track is unavailable for playback."
+                    }
+                  >
+                    Unavailable
+                  </span>
+                )}
                 <a
                   className="rounded-full border border-white/15 px-3 py-1 text-sm text-[#a7b0aa] hover:bg-white/10 hover:text-white"
                   href={`https://open.spotify.com/track/${track.id}`}

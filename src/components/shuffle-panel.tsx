@@ -204,14 +204,7 @@ export function ShufflePanel({
             </p>
           ) : null}
         </>
-      ) : (
-        <p className="rounded-2xl border border-white/10 bg-white/5 p-6 text-[#a7b0aa]">
-          This uses a true Fisher–Yates shuffle — not Spotify’s biased shuffle
-          toggle. No-repeat deck remembers batches already dealt; fresh random
-          starts over each time. Open Spotify on a device first, then shuffle &
-          play.
-        </p>
-      )}
+      ) : null}
     </div>
   );
 }

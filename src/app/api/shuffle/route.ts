@@ -55,7 +55,11 @@ export async function POST(request: Request) {
   try {
     const playlistTracks = await getCachedPlaylistTracks(accessToken, playlistId);
     const uniqueTracks = Array.from(
-      new Map(playlistTracks.map((track) => [track.id, track])).values(),
+      new Map(
+        playlistTracks
+          .filter((track) => track.isPlayable)
+          .map((track) => [track.id, track]),
+      ).values(),
     );
 
     if (uniqueTracks.length === 0) {

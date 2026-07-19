@@ -21,6 +21,7 @@ function isTrack(value: unknown): value is SpotifyPlaylistTrack {
     typeof track.id === "string" &&
     typeof track.name === "string" &&
     typeof track.uri === "string" &&
+    typeof track.isPlayable === "boolean" &&
     Array.isArray(track.artists)
   );
 }

@@ -42,15 +42,28 @@ export type SpotifyPlaylistTrack = {
   id: string;
   name: string;
   uri: string;
+  isPlayable: boolean;
+  availabilityReason?: string;
   artists: Array<{
     id: string;
     name: string;
   }>;
 };
 
+type SpotifyApiPlaylistTrack = Omit<
+  SpotifyPlaylistTrack,
+  "isPlayable" | "availabilityReason"
+> & {
+  is_playable?: boolean;
+  is_local?: boolean;
+  restrictions?: {
+    reason?: string;
+  };
+};
+
 type PlaylistItem = {
-  item?: SpotifyPlaylistTrack | null;
-  track?: SpotifyPlaylistTrack | null;
+  item?: SpotifyApiPlaylistTrack | null;
+  track?: SpotifyApiPlaylistTrack | null;
 };
 
 type TokenResponse = {
@@ -213,9 +226,9 @@ export async function getPlaylistTracks(
   // include album art, markets, etc. and are ~50x larger. Both `item` and
   // `track` keys are requested to cover the 2026 field rename.
   const fields = encodeURIComponent(
-    "total,items(item(id,name,uri,artists(id,name)),track(id,name,uri,artists(id,name)))",
+    "total,items(item(id,name,uri,is_playable,is_local,restrictions(reason),artists(id,name)),track(id,name,uri,is_playable,is_local,restrictions(reason),artists(id,name)))",
   );
-  const basePath = `/playlists/${encodeURIComponent(playlistId)}/items?fields=${fields}&limit=${limit}`;
+  const basePath = `/playlists/${encodeURIComponent(playlistId)}/items?fields=${fields}&market=from_token&limit=${limit}`;
 
   const firstPage = await spotifyFetch<Page<PlaylistItem>>(
     accessToken,
@@ -256,7 +269,17 @@ export async function getPlaylistTracks(
       const item = playlistItem.item ?? playlistItem.track;
 
       if (item?.id && item.uri && item.artists) {
-        tracks.push(item);
+        tracks.push({
+          id: item.id,
+          name: item.name,
+          uri: item.uri,
+          artists: item.artists,
+          isPlayable:
+            item.is_playable !== false &&
+            item.is_local !== true &&
+            !item.restrictions?.reason,
+          availabilityReason: item.restrictions?.reason,
+        });
       }
     }
   }
