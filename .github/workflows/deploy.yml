@@ -14,6 +14,14 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      - name: Validate secrets
+        run: |
+          missing=0
+          [ -z "${{ secrets.SSH_HOST }}" ] && echo "::error::SSH_HOST secret is empty or missing" && missing=1
+          [ -z "${{ secrets.SSH_USER }}" ] && echo "::error::SSH_USER secret is empty or missing" && missing=1
+          [ -z "${{ secrets.SSH_PRIVATE_KEY }}" ] && echo "::error::SSH_PRIVATE_KEY secret is empty or missing" && missing=1
+          exit $missing
+
       - name: Checkout
         uses: actions/checkout@v4
 
