@@ -167,6 +167,7 @@ async function loadDashboardData(
         id: track.id,
         name: track.name,
         artistIds: track.artists.map((artist) => artist.id).filter(Boolean),
+        artistNames: track.artists.map((artist) => artist.name).filter(Boolean),
       })),
       since,
     );

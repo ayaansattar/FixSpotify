@@ -138,14 +138,21 @@ The importer:
 
 - Reads audio and video streaming-history JSON files.
 - Imports only tracks played for more than 30 seconds.
+- Stores track and artist names for robust play-count matching.
 - Ignores podcasts, audiobooks, and invalid records.
 - Deduplicates records within the export.
 - Deduplicates against plays already stored in SQLite.
+- Backfills missing artist names on existing play rows when re-run.
 - Can be run repeatedly without creating duplicates.
 
 After the initial import, the hourly scheduler keeps the database current.
-Running the importer again is only necessary when importing a newer export or
-rebuilding the database.
+Running the importer again is only necessary when importing a newer export,
+rebuilding the database, or backfilling artist names after a schema update.
+
+If plays were imported before artist names were stored, drop the export back
+into `spotify_history/` and re-run `npm run history:import`. You can also run
+`npm run history:backfill-artists` to fill names from playlist caches for
+tracks that already appear in your preferred playlists.
 
 ## Available commands
 
@@ -156,7 +163,8 @@ npm run start           # Start the production server
 npm run lint            # Run ESLint
 npm run db:generate     # Generate the Prisma client
 npm run db:migrate      # Create and apply a development migration
-npm run history:import  # Import extended Spotify history
+npm run history:import            # Import extended Spotify history
+npm run history:backfill-artists  # Fill missing artist names from caches
 ```
 
 ## Data and caching

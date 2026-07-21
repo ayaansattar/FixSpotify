@@ -105,7 +105,12 @@ export async function POST(request: Request) {
             candidates.map((track) => ({
               id: track.id,
               name: track.name,
-              artistIds: track.artists.map((artist) => artist.id),
+              artistIds: track.artists
+                .map((artist) => artist.id)
+                .filter(Boolean),
+              artistNames: track.artists
+                .map((artist) => artist.name)
+                .filter(Boolean),
             })),
             null,
           )

@@ -12,6 +12,7 @@ type SpotifyHistoryRecord = {
   ts?: unknown;
   ms_played?: unknown;
   master_metadata_track_name?: unknown;
+  master_metadata_album_artist_name?: unknown;
   spotify_track_uri?: unknown;
 };
 
@@ -19,6 +20,7 @@ type ImportablePlay = {
   trackId: string;
   trackName: string;
   artistId: string;
+  artistName: string;
   playedAt: Date;
 };
 
@@ -99,9 +101,12 @@ async function main() {
       playsByKey.set(key, {
         trackId,
         trackName: record.master_metadata_track_name,
-        // Spotify's history export contains the artist name but not artist ID.
-        // Dashboard counts join on trackId, so this does not affect reports.
+        // Spotify's history export has artist names but not artist IDs.
         artistId: "unknown",
+        artistName:
+          typeof record.master_metadata_album_artist_name === "string"
+            ? record.master_metadata_album_artist_name
+            : "",
         playedAt,
       });
     }
@@ -132,6 +137,24 @@ async function main() {
     );
   }
 
+  // Fill blank artist names on older rows that share a track ID with this export.
+  let artistNamesBackfilled = 0;
+  const artistNameByTrackId = new Map<string, string>();
+
+  for (const play of playsByKey.values()) {
+    if (play.artistName && !artistNameByTrackId.has(play.trackId)) {
+      artistNameByTrackId.set(play.trackId, play.artistName);
+    }
+  }
+
+  for (const [trackId, artistName] of artistNameByTrackId) {
+    const result = await db.play.updateMany({
+      where: { trackId, artistName: "" },
+      data: { artistName },
+    });
+    artistNamesBackfilled += result.count;
+  }
+
   const totalPlays = await db.play.count();
 
   console.log("\nImport complete");
@@ -149,6 +172,9 @@ async function main() {
     `Already in database: ${(playsByKey.size - freshPlays.length).toLocaleString()}`,
   );
   console.log(`Inserted: ${inserted.toLocaleString()}`);
+  console.log(
+    `Artist names backfilled: ${artistNamesBackfilled.toLocaleString()}`,
+  );
   console.log(`Total plays in database: ${totalPlays.toLocaleString()}`);
 }
 

@@ -10,7 +10,8 @@
     "lint": "eslint .",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
-    "history:import": "tsx scripts/import-spotify-history.ts"
+    "history:import": "tsx scripts/import-spotify-history.ts",
+    "history:backfill-artists": "tsx scripts/backfill-play-artists.ts"
   },
   "repository": {
     "type": "git",

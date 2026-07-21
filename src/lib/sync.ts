@@ -19,6 +19,9 @@ export async function syncRecentlyPlayed(
       trackId: item.track!.id,
       trackName: item.track!.name,
       artistId: item.track!.artists[0]?.id ?? "unknown",
+      artistName:
+        item.track!.artists.map((artist) => artist.name).filter(Boolean).join(", ") ||
+        "",
       playedAt: new Date(item.played_at),
     }));
 
@@ -49,6 +52,25 @@ export async function syncRecentlyPlayed(
 
   if (freshPlays.length > 0) {
     await db.play.createMany({ data: freshPlays });
+  }
+
+  // Backfill artist names onto older rows that share these track IDs but were
+  // stored before artistName existed.
+  for (const play of plays) {
+    if (!play.artistName) {
+      continue;
+    }
+
+    await db.play.updateMany({
+      where: {
+        trackId: play.trackId,
+        artistName: "",
+      },
+      data: {
+        artistId: play.artistId,
+        artistName: play.artistName,
+      },
+    });
   }
 
   const totalPlays = await db.play.count();

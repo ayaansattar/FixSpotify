@@ -8,16 +8,18 @@ datasource db {
 }
 
 model Play {
-  id        String   @id @default(cuid())
-  trackId   String
-  trackName String
-  artistId  String
-  playedAt  DateTime
-  createdAt DateTime @default(now())
+  id         String   @id @default(cuid())
+  trackId    String
+  trackName  String
+  artistId   String
+  artistName String   @default("")
+  playedAt   DateTime
+  createdAt  DateTime @default(now())
 
   @@unique([trackId, playedAt])
   @@index([trackId])
   @@index([playedAt])
+  @@index([trackName])
 }
 
 model GenreCache {
