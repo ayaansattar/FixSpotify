@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Dropdown } from "@/components/dropdown";
 
@@ -39,6 +39,15 @@ export function TrackList({
   const [notice, setNotice] = useState<Notice | null>(null);
   const [filter, setFilter] = useState("all");
   const [query, setQuery] = useState("");
+
+  useEffect(() => {
+    setTracks(initialTracks);
+    setFilter("all");
+    setQuery("");
+    setPendingTrackId(null);
+    setPlayingTrackId(null);
+    setNotice(null);
+  }, [initialTracks]);
 
   const playBuckets = [
     { value: "1-2", label: "1–2 plays", matches: (count: number) => count >= 1 && count <= 2 },

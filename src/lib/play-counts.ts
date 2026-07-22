@@ -75,14 +75,12 @@ export async function getPlayCounts(
     count: group._count._all,
   }));
 
-  const outsideGroups = groups.filter(
-    (group) => !playlistIdSet.has(group.trackId),
-  );
-
-  // Soft-title + artist aliases.
+  // Soft-title + artist aliases. Include other playlist track IDs too, so
+  // "Take on Me" and "Take on Me - MTV Unplugged" on the same playlist share
+  // play history when their soft titles match.
   const aliasBuckets = new Map<string, PlayGroup[]>();
 
-  for (const group of outsideGroups) {
+  for (const group of groups) {
     const key = softNormalizeTitle(group.trackName);
 
     if (!key) {
@@ -121,6 +119,9 @@ export async function getPlayCounts(
   }
 
   // ISRC aliases: same recording, different Spotify IDs / localized titles.
+  const outsideGroups = groups.filter(
+    (group) => !playlistIdSet.has(group.trackId),
+  );
   await mergeIsrcAliases(
     accessToken,
     tracks,
@@ -139,26 +140,33 @@ async function mergeIsrcAliases(
   countByTrack: Map<string, number>,
   countedPlayIds: Map<string, Set<string>>,
 ) {
-  // Prefer fixing never-played tracks first, then the rest.
-  const orderedTracks = [...tracks].sort(
-    (a, b) => (countByTrack.get(a.id) ?? 0) - (countByTrack.get(b.id) ?? 0),
-  );
+  // Always finish never-played tracks first so localized titles (Qeiam/قيام)
+  // aren't starved by later ISRC lookups on large playlists.
+  const orderedTracks = [...tracks].sort((a, b) => {
+    const aCount = countByTrack.get(a.id) ?? 0;
+    const bCount = countByTrack.get(b.id) ?? 0;
+    if (aCount === 0 && bCount !== 0) return -1;
+    if (bCount === 0 && aCount !== 0) return 1;
+    return aCount - bCount;
+  });
 
   const playlistIdsToResolve: string[] = [];
   const candidateIds = new Set<string>();
-  const MAX_FETCHES = 80;
+  const MAX_FETCHES = 120;
 
   for (const track of orderedTracks) {
-    if (playlistIdsToResolve.length + candidateIds.size >= MAX_FETCHES) {
+    const remaining = MAX_FETCHES - (playlistIdsToResolve.length + candidateIds.size);
+    if (remaining <= 1) {
       break;
     }
 
     const counted = countedPlayIds.get(track.id)!;
     let addedForTrack = 0;
+    const perTrackBudget = trackCountIsZero(countByTrack, track.id) ? 12 : 4;
 
     for (const group of outsideGroups) {
       if (
-        addedForTrack >= 8 ||
+        addedForTrack >= perTrackBudget ||
         playlistIdsToResolve.length + candidateIds.size >= MAX_FETCHES
       ) {
         break;
@@ -228,6 +236,13 @@ async function mergeIsrcAliases(
   }
 }
 
+function trackCountIsZero(
+  countByTrack: Map<string, number>,
+  trackId: string,
+) {
+  return (countByTrack.get(trackId) ?? 0) === 0;
+}
+
 function artistsMatch(
   play: { artistId: string; artistName: string },
   artistIds: string[],
@@ -271,14 +286,14 @@ export function normalizeTitle(name: string) {
 }
 
 /**
- * Soft title key used for alias matching. Strips remaster / featuring tags so
- * "Song - Remastered" matches "Song", but leaves Remix/Live intact so those
- * remain separate recordings.
+ * Soft title key used for alias matching. Strips remaster / live / unplugged /
+ * featuring tags so alternate releases of the same song still match, while
+ * leaving Remix as its own recording.
  */
 export function softNormalizeTitle(name: string) {
   return normalizeTitle(name)
     .replace(
-      /\b(remaster(?:ed)?|deluxe(?: edition)?|radio edit|feat(?:uring)?|ft)\b/gu,
+      /\b(remaster(?:ed)?|deluxe(?: edition)?|radio edit|radio version|mtv unplugged|unplugged|summer solstice|acoustic(?: version)?|live(?: version)?|mono|stereo|feat(?:uring)?|ft)\b/gu,
       " ",
     )
     .replace(/\s+/g, " ")

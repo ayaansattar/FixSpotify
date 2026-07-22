@@ -17,9 +17,9 @@ import { getValidAccessToken } from "@/lib/tokens";
 
 // days: 0 means lifetime (no date cutoff).
 const windows = [
-  { days: 183, label: "6 months" },
-  { days: 365, label: "1 year" },
   { days: 0, label: "Lifetime" },
+  { days: 365, label: "1 year" },
+  { days: 183, label: "6 months" },
 ] as const;
 
 type DashboardProps = {
@@ -61,7 +61,7 @@ export default async function Dashboard({ searchParams }: DashboardProps) {
   const requestedDays = Number(params.days);
   const days = windows.some((window) => window.days === requestedDays)
     ? requestedDays
-    : windows[0].days;
+    : 0; // Default to lifetime — most useful once extended history is imported.
 
   const data = await loadDashboardData(
     accessToken,
