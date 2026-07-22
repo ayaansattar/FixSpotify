@@ -117,24 +117,35 @@ export function ShufflePanel({
   return (
     <div className="space-y-6">
       <div className="space-y-4 rounded-2xl border border-white/10 bg-white/5 p-5">
-        <label className="flex cursor-pointer items-center justify-between gap-4 text-sm font-medium">
+        <div className="flex items-center justify-between gap-4 text-sm font-medium">
           <span>
             Master mix
             <span className="mt-1 block font-normal text-[#a7b0aa]">
               Combine songs from multiple playlists into one shuffle.
             </span>
           </span>
-          <input
-            checked={masterMix}
-            className="h-4 w-4 accent-[#1ed760]"
+          <button
+            aria-checked={masterMix}
+            aria-label="Master mix"
+            className={`relative h-7 w-12 shrink-0 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+              masterMix ? "bg-[#1ed760]" : "bg-white/20"
+            }`}
             disabled={loading}
-            onChange={(event) => {
-              setMasterMix(event.target.checked);
+            onClick={() => {
+              setMasterMix((current) => !current);
               clearResult();
             }}
-            type="checkbox"
-          />
-        </label>
+            role="switch"
+            type="button"
+          >
+            <span
+              aria-hidden
+              className={`absolute top-0.5 left-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform ${
+                masterMix ? "translate-x-5" : "translate-x-0"
+              }`}
+            />
+          </button>
+        </div>
 
         {masterMix ? (
           <div className="grid gap-3">
