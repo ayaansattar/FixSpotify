@@ -287,11 +287,19 @@ export function normalizeTitle(name: string) {
 
 /**
  * Soft title key used for alias matching. Strips remaster / live / unplugged /
- * featuring tags so alternate releases of the same song still match, while
- * leaving Remix as its own recording.
+ * featuring tags and soundtrack "From …" suffixes so alternate releases of the
+ * same song still match, while leaving Remix as its own recording.
  */
 export function softNormalizeTitle(name: string) {
-  return normalizeTitle(name)
+  const withoutSoundtrack = name
+    // "Dooriyan (From "Love Aaj Kal")" / "Jugni (from "Cocktail")"
+    .replace(/\(\s*from\b[^)]*\)/gi, " ")
+    // "Woh Lamhe Woh Baatein - From "Zeher""
+    .replace(/\s*[-\u2013\u2014]\s*from\b.*$/gi, " ")
+    // "Kalabaaz Dil from 'Lahore Se Aagey'"
+    .replace(/\s+from\s+['\u2018\u2019\u201c\u201d"].*$/gi, " ");
+
+  return normalizeTitle(withoutSoundtrack)
     .replace(
       /\b(remaster(?:ed)?|deluxe(?: edition)?|radio edit|radio version|mtv unplugged|unplugged|summer solstice|acoustic(?: version)?|live(?: version)?|mono|stereo|feat(?:uring)?|ft)\b/gu,
       " ",
