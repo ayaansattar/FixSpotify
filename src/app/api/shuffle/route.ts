@@ -113,6 +113,7 @@ export async function POST(request: Request) {
                 .filter(Boolean),
             })),
             null,
+            accessToken,
           )
         : new Map<string, number>();
     const shuffled =

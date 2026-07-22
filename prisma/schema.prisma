@@ -22,6 +22,16 @@ model Play {
   @@index([trackName])
 }
 
+model TrackMeta {
+  trackId    String   @id
+  isrc       String?
+  name       String   @default("")
+  artistName String   @default("")
+  updatedAt  DateTime @updatedAt
+
+  @@index([isrc])
+}
+
 model GenreCache {
   artistId String   @id
   genres   String

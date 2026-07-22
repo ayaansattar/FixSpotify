@@ -287,6 +287,17 @@ export async function getPlaylistTracks(
   return tracks;
 }
 
+export async function getSpotifyTrack(accessToken: string, trackId: string) {
+  return spotifyFetch<{
+    id: string;
+    name: string;
+    artists: Array<{ id: string; name: string }>;
+    external_ids?: {
+      isrc?: string;
+    };
+  }>(accessToken, `/tracks/${encodeURIComponent(trackId)}`);
+}
+
 export async function startSpotifyPlayback(
   accessToken: string,
   trackUris: string | string[],

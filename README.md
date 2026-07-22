@@ -15,6 +15,9 @@ Spotify account and works with Spotify's Development Mode.
 - Identifies tracks that Spotify marks unavailable in the listener's market.
 - Searches and filters dashboard tracks by title, artist, availability, and
   play-count ranges.
+- Merges play counts across alternate Spotify track IDs using title/artist
+  matching and ISRC identity (so localized titles like Arabic/Latin versions
+  of the same recording count together).
 - Removes tracks and keeps a seven-day recently deleted list.
 - Restores deleted tracks without adding duplicates.
 - Provides Fisher–Yates fair shuffle.

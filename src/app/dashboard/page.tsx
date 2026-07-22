@@ -170,6 +170,7 @@ async function loadDashboardData(
         artistNames: track.artists.map((artist) => artist.name).filter(Boolean),
       })),
       since,
+      accessToken,
     );
     const rankedTracks = uniqueTracks
       .map((track) => ({
