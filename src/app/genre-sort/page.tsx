@@ -123,7 +123,11 @@ export default async function GenreSortPage({
         </p>
       ) : null}
 
-      <GenreTrackList playlistId={selectedPlaylist.id} tracks={tracks} />
+      <GenreTrackList
+        playlistId={selectedPlaylist.id}
+        playlistName={selectedPlaylist.name}
+        tracks={tracks}
+      />
 
       <p className="mt-5 text-xs leading-5 text-[#69736d]">
         Sorting uses your playlist intent descriptions, artist-cohesion

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { AlbumCover } from "@/components/album-cover";
 
@@ -24,21 +24,30 @@ type GenreTrackListItem = {
   note: string | null;
 };
 
-type AddResult = "added" | "already-present";
-
 export function GenreTrackList({
   playlistId,
-  tracks,
+  playlistName,
+  tracks: initialTracks,
 }: {
   playlistId: string;
+  playlistName: string;
   tracks: GenreTrackListItem[];
 }) {
   const router = useRouter();
+  const [tracks, setTracks] = useState(initialTracks);
   const [pendingId, setPendingId] = useState<string | null>(null);
-  const [results, setResults] = useState<Record<string, AddResult>>({});
+  const [addedIds, setAddedIds] = useState<Record<string, true>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
   const [noteOpenId, setNoteOpenId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setTracks(initialTracks);
+    setAddedIds({});
+    setErrors({});
+    setNoteOpenId(null);
+    setPendingId(null);
+  }, [initialTracks]);
 
   async function addToSuggestedPlaylist(track: GenreTrackListItem) {
     if (!track.suggestion) {
@@ -73,10 +82,7 @@ export function GenreTrackList({
         );
       }
 
-      setResults((current) => ({
-        ...current,
-        [track.id]: body?.alreadyPresent ? "already-present" : "added",
-      }));
+      setAddedIds((current) => ({ ...current, [track.id]: true }));
     } catch (error) {
       setErrors((current) => ({
         ...current,
@@ -84,6 +90,62 @@ export function GenreTrackList({
           error instanceof Error
             ? error.message
             : "Unable to add the track to the playlist.",
+      }));
+    } finally {
+      setPendingId(null);
+    }
+  }
+
+  async function removeFromCurrentPlaylist(track: GenreTrackListItem) {
+    const confirmed = window.confirm(
+      `Remove “${track.name}” from ${playlistName}?\n\nIt will stay in ${track.suggestion?.playlistName ?? "the other playlist"} and appear under Recently Deleted for this playlist.`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setPendingId(track.id);
+    setErrors((current) => {
+      const next = { ...current };
+      delete next[track.id];
+      return next;
+    });
+
+    try {
+      const response = await fetch(
+        `/api/playlists/${encodeURIComponent(playlistId)}/items`,
+        {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            artistNames: track.artistNames,
+            playlistName,
+            trackId: track.id,
+            trackName: track.name,
+            trackUri: track.uri,
+            albumImageUrl: track.imageUrl,
+          }),
+        },
+      );
+      const body = (await response.json().catch(() => null)) as {
+        error?: string;
+      } | null;
+
+      if (!response.ok) {
+        throw new Error(body?.error ?? "Unable to remove the track.");
+      }
+
+      setTracks((current) =>
+        current.filter((currentTrack) => currentTrack.id !== track.id),
+      );
+    } catch (error) {
+      setErrors((current) => ({
+        ...current,
+        [track.id]:
+          error instanceof Error
+            ? error.message
+            : "Unable to remove the track.",
       }));
     } finally {
       setPendingId(null);
@@ -167,7 +229,7 @@ export function GenreTrackList({
     <ul className="mt-5 space-y-3">
       {tracks.map((track) => {
         const pending = pendingId === track.id;
-        const result = results[track.id];
+        const added = Boolean(addedIds[track.id]);
         const noteOpen = noteOpenId === track.id;
 
         return (
@@ -207,20 +269,29 @@ export function GenreTrackList({
                         {track.suggestion.playlistName}
                       </span>
                     </p>
-                    <button
-                      className="rounded-full border border-[#1ed760]/30 bg-[#1ed760]/10 px-3 py-1.5 text-xs font-semibold text-[#1ed760] transition hover:bg-[#1ed760]/20 disabled:cursor-not-allowed disabled:opacity-60"
-                      disabled={pending || Boolean(result)}
-                      onClick={() => void addToSuggestedPlaylist(track)}
-                      type="button"
-                    >
-                      {pending
-                        ? "Adding…"
-                        : result === "added"
-                          ? "Added"
-                          : result === "already-present"
-                            ? "Already there"
-                            : `Add to ${track.suggestion.playlistName}`}
-                    </button>
+                    {added ? (
+                      <button
+                        className="cursor-pointer rounded-full border border-red-300/30 bg-red-300/10 px-3 py-1.5 text-xs font-semibold text-red-200 transition hover:bg-red-300/20 disabled:cursor-not-allowed disabled:opacity-60"
+                        disabled={pending}
+                        onClick={() => void removeFromCurrentPlaylist(track)}
+                        type="button"
+                      >
+                        {pending
+                          ? "Removing…"
+                          : `Remove from ${playlistName}`}
+                      </button>
+                    ) : (
+                      <button
+                        className="cursor-pointer rounded-full border border-[#1ed760]/30 bg-[#1ed760]/10 px-3 py-1.5 text-xs font-semibold text-[#1ed760] transition hover:bg-[#1ed760]/20 disabled:cursor-not-allowed disabled:opacity-60"
+                        disabled={pending}
+                        onClick={() => void addToSuggestedPlaylist(track)}
+                        type="button"
+                      >
+                        {pending
+                          ? "Adding…"
+                          : `Add to ${track.suggestion.playlistName}`}
+                      </button>
+                    )}
                   </>
                 ) : null}
 
