@@ -16,6 +16,7 @@ import { getValidAccessToken } from "@/lib/tokens";
 
 /** Safe batch size for /me/player/play to avoid 413 payload errors. */
 const PLAY_BATCH = 100;
+const MAX_PLAYLISTS = 50;
 
 export async function POST(request: Request) {
   const session = await getServerSession(authOptions);
@@ -27,6 +28,7 @@ export async function POST(request: Request) {
   const body = (await request.json().catch(() => null)) as {
     mode?: unknown;
     playlistId?: unknown;
+    playlistIds?: unknown;
     play?: unknown;
     reset?: unknown;
   } | null;
@@ -36,18 +38,15 @@ export async function POST(request: Request) {
       : body?.mode === "weighted"
         ? "weighted"
         : "deck";
-  const playlistId = body?.playlistId;
+  const playlistIds = parsePlaylistIds(body);
   const shouldPlay = body?.play !== false;
   const resetDeck = body?.reset === true;
 
-  if (
-    typeof playlistId !== "string" ||
-    playlistId.length === 0 ||
-    playlistId.length > 100
-  ) {
+  if (!playlistIds) {
     return NextResponse.json({ error: "Invalid playlist." }, { status: 400 });
   }
 
+  const deckKey = shuffleDeckKey(playlistIds);
   const accessToken =
     session.accessToken ?? (await getValidAccessToken()) ?? null;
 
@@ -59,10 +58,15 @@ export async function POST(request: Request) {
   }
 
   try {
-    const playlistTracks = await getCachedPlaylistTracks(accessToken, playlistId);
+    const playlistTrackLists = await Promise.all(
+      playlistIds.map((playlistId) =>
+        getCachedPlaylistTracks(accessToken, playlistId),
+      ),
+    );
     const uniqueTracks = Array.from(
       new Map(
-        playlistTracks
+        playlistTrackLists
+          .flat()
           .filter((track) => track.isPlayable)
           .map((track) => [track.id, track]),
       ).values(),
@@ -70,7 +74,12 @@ export async function POST(request: Request) {
 
     if (uniqueTracks.length === 0) {
       return NextResponse.json(
-        { error: "This playlist has no playable tracks." },
+        {
+          error:
+            playlistIds.length > 1
+              ? "These playlists have no playable tracks."
+              : "This playlist has no playable tracks.",
+        },
         { status: 400 },
       );
     }
@@ -80,7 +89,7 @@ export async function POST(request: Request) {
 
     if (mode === "deck" && !resetDeck) {
       const deck = await db.shuffleDeck.findUnique({
-        where: { playlistId },
+        where: { playlistId: deckKey },
       });
       usedTrackIds = parseTrackIds(deck?.usedTrackIds).filter((trackId) =>
         allTrackIds.has(trackId),
@@ -141,9 +150,9 @@ export async function POST(request: Request) {
 
       if (mode === "deck") {
         await db.shuffleDeck.upsert({
-          where: { playlistId },
+          where: { playlistId: deckKey },
           create: {
-            playlistId,
+            playlistId: deckKey,
             usedTrackIds: JSON.stringify([
               ...usedTrackIds,
               ...playTracks.map((track) => track.id),
@@ -161,7 +170,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       mode,
-      playlistId,
+      playlistIds,
       remaining:
         mode === "deck" ? Math.max(0, candidates.length - playTracks.length) : 0,
       total: uniqueTracks.length,
@@ -186,6 +195,41 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ error: message }, { status: 502 });
   }
+}
+
+function parsePlaylistIds(body: {
+  playlistId?: unknown;
+  playlistIds?: unknown;
+} | null): string[] | null {
+  const fromArray = Array.isArray(body?.playlistIds)
+    ? body.playlistIds.filter(
+        (id): id is string =>
+          typeof id === "string" && id.length > 0 && id.length <= 100,
+      )
+    : [];
+  const unique =
+    fromArray.length > 0
+      ? Array.from(new Set(fromArray))
+      : typeof body?.playlistId === "string" &&
+          body.playlistId.length > 0 &&
+          body.playlistId.length <= 100
+        ? [body.playlistId]
+        : [];
+
+  if (unique.length === 0 || unique.length > MAX_PLAYLISTS) {
+    return null;
+  }
+
+  return unique;
+}
+
+/** Stable ShuffleDeck PK for one playlist or a multi-playlist mix. */
+function shuffleDeckKey(playlistIds: string[]) {
+  if (playlistIds.length === 1) {
+    return playlistIds[0];
+  }
+
+  return `mix:${[...playlistIds].sort().join(",")}`;
 }
 
 function parseTrackIds(value: string | null | undefined): string[] {

@@ -91,7 +91,8 @@ function ShuffleShell({ children }: { children: React.ReactNode }) {
         <h1 className="text-3xl font-bold tracking-tight">Fair shuffle</h1>
         <p className="mt-2 max-w-2xl text-sm text-[#a7b0aa]">
           Builds a uniform-random order with Fisher–Yates, turns off Spotify’s
-          shuffle, and plays that exact sequence on your active device.
+          shuffle, and plays that exact sequence on your active device. Turn on
+          Master mix to combine songs from several playlists into one pool.
         </p>
       </header>
       {children}
