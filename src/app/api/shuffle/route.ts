@@ -181,6 +181,7 @@ export async function POST(request: Request) {
         name: track.name,
         uri: track.uri,
         artists: track.artists.map((artist) => artist.name).join(", "),
+        imageUrl: track.imageUrl,
         playCount:
           mode === "weighted" ? (playCounts.get(track.id) ?? 0) : undefined,
       })),

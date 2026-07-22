@@ -30,12 +30,17 @@ export async function DELETE(request: Request, context: RouteContext) {
     trackId?: unknown;
     trackName?: unknown;
     trackUri?: unknown;
+    albumImageUrl?: unknown;
   } | null;
   const artistNames = body?.artistNames;
   const playlistName = body?.playlistName;
   const trackId = body?.trackId;
   const trackName = body?.trackName;
   const trackUri = body?.trackUri;
+  const albumImageUrl =
+    typeof body?.albumImageUrl === "string" && body.albumImageUrl.length > 0
+      ? body.albumImageUrl
+      : null;
 
   if (
     !playlistId ||
@@ -53,7 +58,9 @@ export async function DELETE(request: Request, context: RouteContext) {
     artistNames.length > 1000 ||
     typeof trackUri !== "string" ||
     !trackUri.startsWith("spotify:track:") ||
-    trackUri.length > 100
+    trackUri.length > 100 ||
+    (albumImageUrl !== null &&
+      (albumImageUrl.length > 500 || !/^https:\/\//.test(albumImageUrl)))
   ) {
     return NextResponse.json(
       { error: "Invalid playlist or track." },
@@ -85,6 +92,7 @@ export async function DELETE(request: Request, context: RouteContext) {
           trackName,
           artistNames,
           trackUri,
+          albumImageUrl,
         },
       });
     } catch (historyError) {

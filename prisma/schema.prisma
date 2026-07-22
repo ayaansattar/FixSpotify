@@ -55,14 +55,15 @@ model PlaylistPreference {
 }
 
 model DeletedTrack {
-  id          String   @id @default(cuid())
-  playlistId  String
+  id           String   @id @default(cuid())
+  playlistId   String
   playlistName String
-  trackId     String
-  trackName   String
-  artistNames String
-  trackUri    String
-  deletedAt   DateTime @default(now())
+  trackId      String
+  trackName    String
+  artistNames  String
+  trackUri     String
+  albumImageUrl String?
+  deletedAt    DateTime @default(now())
 
   @@index([deletedAt])
   @@index([playlistId])

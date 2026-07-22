@@ -44,6 +44,8 @@ export type SpotifyPlaylistTrack = {
   uri: string;
   isPlayable: boolean;
   availabilityReason?: string;
+  /** Smallest useful album art URL, when Spotify provides one. */
+  imageUrl: string | null;
   artists: Array<{
     id: string;
     name: string;
@@ -52,12 +54,19 @@ export type SpotifyPlaylistTrack = {
 
 type SpotifyApiPlaylistTrack = Omit<
   SpotifyPlaylistTrack,
-  "isPlayable" | "availabilityReason"
+  "isPlayable" | "availabilityReason" | "imageUrl"
 > & {
   is_playable?: boolean;
   is_local?: boolean;
   restrictions?: {
     reason?: string;
+  };
+  album?: {
+    images?: Array<{
+      url?: string;
+      height?: number | null;
+      width?: number | null;
+    }>;
   };
 };
 
@@ -223,10 +232,11 @@ export async function getPlaylistTracks(
 ) {
   const limit = 50;
   // Trim the response to just the fields we use; full playlist item payloads
-  // include album art, markets, etc. and are ~50x larger. Both `item` and
-  // `track` keys are requested to cover the 2026 field rename.
+  // include markets and other unused metadata. Both `item` and `track` keys
+  // are requested to cover the 2026 field rename. Album images are limited to
+  // url/height so we can pick a small cover without the full payload.
   const fields = encodeURIComponent(
-    "total,items(item(id,name,uri,is_playable,is_local,restrictions(reason),artists(id,name)),track(id,name,uri,is_playable,is_local,restrictions(reason),artists(id,name)))",
+    "total,items(item(id,name,uri,is_playable,is_local,restrictions(reason),artists(id,name),album(images(url,height))),track(id,name,uri,is_playable,is_local,restrictions(reason),artists(id,name),album(images(url,height))))",
   );
   const basePath = `/playlists/${encodeURIComponent(playlistId)}/items?fields=${fields}&market=from_token&limit=${limit}`;
 
@@ -274,6 +284,7 @@ export async function getPlaylistTracks(
           name: item.name,
           uri: item.uri,
           artists: item.artists,
+          imageUrl: pickAlbumImageUrl(item.album?.images),
           isPlayable:
             item.is_playable !== false &&
             item.is_local !== true &&
@@ -368,4 +379,33 @@ export async function addSpotifyPlaylistItem(
       }),
     },
   );
+}
+
+/** Prefer ~64px album art for list thumbnails; fall back to any available size. */
+export function pickAlbumImageUrl(
+  images?: Array<{
+    url?: string;
+    height?: number | null;
+    width?: number | null;
+  }> | null,
+): string | null {
+  if (!images?.length) {
+    return null;
+  }
+
+  const withUrl = images.filter(
+    (image): image is { url: string; height?: number | null } =>
+      typeof image.url === "string" && image.url.length > 0,
+  );
+
+  if (withUrl.length === 0) {
+    return null;
+  }
+
+  const sorted = [...withUrl].sort(
+    (a, b) => (a.height ?? Number.POSITIVE_INFINITY) - (b.height ?? Number.POSITIVE_INFINITY),
+  );
+  const preferred = sorted.find((image) => (image.height ?? 0) >= 64);
+
+  return preferred?.url ?? sorted[sorted.length - 1]?.url ?? null;
 }

@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+import { AlbumCover } from "@/components/album-cover";
+
 type MatchStatus = "match" | "no-match" | "unknown";
 
 type SuggestedPlaylist = {
@@ -14,6 +16,7 @@ type GenreTrackListItem = {
   uri: string;
   name: string;
   artistNames: string;
+  imageUrl: string | null;
   genres: string[];
   status: MatchStatus;
   suggestion: SuggestedPlaylist | null;
@@ -91,16 +94,19 @@ export function GenreTrackList({
             className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/5 bg-white/5 px-5 py-4"
             key={track.id}
           >
-            <div className="min-w-0 flex-1">
-              <p className="truncate font-medium">{track.name}</p>
-              <p className="truncate text-sm text-[#a7b0aa]">
-                {track.artistNames}
-              </p>
-              {track.genres.length > 0 ? (
-                <p className="mt-1 truncate text-xs text-[#69736d]">
-                  {track.genres.join(", ")}
+            <div className="flex min-w-0 flex-1 items-center gap-3">
+              <AlbumCover url={track.imageUrl} />
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-medium">{track.name}</p>
+                <p className="truncate text-sm text-[#a7b0aa]">
+                  {track.artistNames}
                 </p>
-              ) : null}
+                {track.genres.length > 0 ? (
+                  <p className="mt-1 truncate text-xs text-[#69736d]">
+                    {track.genres.join(", ")}
+                  </p>
+                ) : null}
+              </div>
             </div>
 
             <div className="flex min-w-40 flex-col items-end gap-1.5">

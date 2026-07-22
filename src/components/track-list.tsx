@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { AlbumCover } from "@/components/album-cover";
 import { Dropdown } from "@/components/dropdown";
 
 type RankedTrack = {
@@ -10,6 +11,7 @@ type RankedTrack = {
   uri: string;
   isPlayable: boolean;
   availabilityReason?: string;
+  imageUrl: string | null;
   artists: Array<{
     id: string;
     name: string;
@@ -168,6 +170,7 @@ export function TrackList({
             trackId: track.id,
             trackName: track.name,
             trackUri: track.uri,
+            albumImageUrl: track.imageUrl,
           }),
         },
       );
@@ -273,7 +276,7 @@ export function TrackList({
 
           return (
             <li
-              className={`grid grid-cols-[2.5rem_minmax(0,1fr)_auto] items-center gap-3 border-b border-white/10 px-4 py-4 transition-colors last:border-b-0 ${
+              className={`grid grid-cols-[2.5rem_2.5rem_minmax(0,1fr)_auto] items-center gap-3 border-b border-white/10 px-4 py-4 transition-colors last:border-b-0 ${
                 track.isPlayable
                   ? "hover:bg-white/[0.03]"
                   : "bg-red-300/[0.025]"
@@ -283,6 +286,7 @@ export function TrackList({
               <span className="text-sm tabular-nums text-[#69736d]">
                 {index + 1}
               </span>
+              <AlbumCover url={track.imageUrl} />
               <div className="min-w-0">
                 <p className="truncate font-medium">{track.name}</p>
                 <p className="truncate text-sm text-[#a7b0aa]">

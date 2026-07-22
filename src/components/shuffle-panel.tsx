@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 
+import { AlbumCover } from "@/components/album-cover";
 import { Dropdown } from "@/components/dropdown";
 
 type PlaylistOption = {
@@ -15,6 +16,7 @@ type ShuffledTrack = {
   name: string;
   uri: string;
   artists: string;
+  imageUrl?: string | null;
   playCount?: number;
 };
 
@@ -306,12 +308,13 @@ export function ShufflePanel({
           <ol className="overflow-hidden rounded-2xl border border-white/10">
             {result.tracks.slice(0, 100).map((track) => (
               <li
-                className="grid grid-cols-[2.5rem_minmax(0,1fr)_auto] items-center gap-3 border-b border-white/10 px-4 py-3 last:border-b-0"
+                className="grid grid-cols-[2.5rem_2.5rem_minmax(0,1fr)_auto] items-center gap-3 border-b border-white/10 px-4 py-3 last:border-b-0"
                 key={`${track.position}-${track.id}`}
               >
                 <span className="text-sm tabular-nums text-[#69736d]">
                   {track.position}
                 </span>
+                <AlbumCover url={track.imageUrl} />
                 <div className="min-w-0">
                   <p className="truncate font-medium">{track.name}</p>
                   <p className="truncate text-sm text-[#a7b0aa]">

@@ -33,6 +33,7 @@ type AnalyzedTrack = {
   uri: string;
   name: string;
   artistNames: string;
+  imageUrl: string | null;
   genres: string[];
   status: MatchStatus;
   suggestion: PlaylistSuggestion | null;
@@ -210,6 +211,7 @@ async function loadGenreSortData(
           uri: track.uri,
           name: track.name,
           artistNames: track.artists.map((artist) => artist.name).join(", "),
+          imageUrl: track.imageUrl,
           genres,
           status,
           suggestion:
