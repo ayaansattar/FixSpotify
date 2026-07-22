@@ -62,9 +62,6 @@ export async function POST(request: Request) {
     },
   });
 
-  // Changing a note invalidates Gemini cache for this source playlist.
-  await db.aiSortCache.deleteMany({ where: { sourcePlaylistId: playlistId } });
-
   return NextResponse.json({ saved: true, id: saved.id });
 }
 
@@ -95,7 +92,6 @@ export async function DELETE(request: Request) {
   await db.playlistTrackNote.deleteMany({
     where: { playlistId, trackId },
   });
-  await db.aiSortCache.deleteMany({ where: { sourcePlaylistId: playlistId } });
 
   return NextResponse.json({ deleted: true });
 }

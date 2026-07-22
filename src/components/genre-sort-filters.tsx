@@ -5,6 +5,8 @@ import { useState } from "react";
 
 import { Dropdown } from "@/components/dropdown";
 
+const GEMINI_BATCH_SIZE = 40;
+
 type PlaylistOption = {
   id: string;
   name: string;
@@ -24,6 +26,7 @@ export function GenreSortFilters({
   const router = useRouter();
   const [analyzing, setAnalyzing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const batchSize = Math.min(GEMINI_BATCH_SIZE, Math.max(pendingCount, 0));
 
   async function analyze() {
     setAnalyzing(true);
@@ -33,12 +36,16 @@ export function GenreSortFilters({
       const response = await fetch("/api/playlist-sort/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ playlistId: selectedPlaylistId, limit: 25 }),
+        body: JSON.stringify({
+          playlistId: selectedPlaylistId,
+          limit: GEMINI_BATCH_SIZE,
+        }),
       });
       const body = (await response.json().catch(() => null)) as {
         analyzed?: number;
         remaining?: number;
         error?: string;
+        retryAfterSeconds?: number;
       } | null;
 
       if (!response.ok) {
@@ -48,7 +55,7 @@ export function GenreSortFilters({
       setMessage(
         `Analyzed ${body?.analyzed ?? 0} tracks` +
           (body?.remaining
-            ? ` · ${body.remaining} still need AI. Run again for the next batch.`
+            ? ` · ${body.remaining} still need AI. Wait ~20s, then run the next batch.`
             : "."),
       );
       router.refresh();
@@ -91,7 +98,7 @@ export function GenreSortFilters({
           {analyzing
             ? "Asking Gemini…"
             : pendingCount > 0
-              ? `Analyze next ${Math.min(25, pendingCount)} with Gemini`
+              ? `Analyze next ${batchSize} with Gemini`
               : "All analyzed"}
         </button>
       </div>

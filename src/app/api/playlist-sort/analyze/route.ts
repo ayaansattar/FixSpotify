@@ -2,6 +2,12 @@ import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 
 import { authOptions } from "@/lib/auth";
+import {
+  beginGeminiCall,
+  checkGeminiRateLimit,
+  endGeminiCall,
+  GEMINI_BATCH_SIZE,
+} from "@/lib/gemini-rate-limit";
 import { getCachedPlaylistTracks } from "@/lib/playlist-cache";
 import {
   analyzeTracksWithGemini,
@@ -33,9 +39,11 @@ export async function POST(request: Request) {
   } | null;
   const playlistId = body?.playlistId;
   const limit =
-    typeof body?.limit === "number" && body.limit > 0 && body.limit <= 40
+    typeof body?.limit === "number" &&
+    body.limit > 0 &&
+    body.limit <= GEMINI_BATCH_SIZE
       ? Math.floor(body.limit)
-      : 25;
+      : GEMINI_BATCH_SIZE;
 
   if (
     typeof playlistId !== "string" ||
@@ -54,6 +62,20 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
+
+  const rate = checkGeminiRateLimit();
+  if (!rate.allowed) {
+    return NextResponse.json(
+      {
+        error: rate.reason,
+        retryAfterSeconds: rate.retryAfterSeconds,
+      },
+      { status: 429 },
+    );
+  }
+
+  beginGeminiCall();
+  let success = false;
 
   try {
     const playlists = await getPreferredPlaylists(accessToken);
@@ -91,6 +113,7 @@ export async function POST(request: Request) {
       limit,
     });
 
+    success = true;
     return NextResponse.json(result);
   } catch (error) {
     return NextResponse.json(
@@ -102,5 +125,7 @@ export async function POST(request: Request) {
       },
       { status: 502 },
     );
+  } finally {
+    endGeminiCall(success);
   }
 }

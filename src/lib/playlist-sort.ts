@@ -72,19 +72,13 @@ export async function getPreferredSortPlaylists(
   }));
 }
 
-export function buildInputHash(
-  playlists: PlaylistSortTarget[],
-  notes: Array<{ trackId: string; note: string }>,
-) {
-  return hashSortInput([
-    ...playlists.map(
+export function buildInputHash(playlists: PlaylistSortTarget[]) {
+  // Notes override at read time and must not bust the whole playlist cache.
+  return hashSortInput(
+    playlists.map(
       (playlist) => `${playlist.id}|${playlist.name}|${playlist.description}`,
     ),
-    ...notes
-      .slice()
-      .sort((a, b) => a.trackId.localeCompare(b.trackId))
-      .map((note) => `${note.trackId}|${note.note}`),
-  ]);
+  );
 }
 
 export async function computeArtistHomes(
@@ -174,10 +168,7 @@ export async function loadAnalyzedTracks(options: {
     where: { playlistId: options.sourcePlaylistId },
   });
   const noteByTrack = new Map(notes.map((note) => [note.trackId, note]));
-  const inputHash = buildInputHash(
-    options.playlists,
-    notes.map((note) => ({ trackId: note.trackId, note: note.note })),
-  );
+  const inputHash = buildInputHash(options.playlists);
 
   const cached = await db.aiSortCache.findMany({
     where: {
@@ -315,7 +306,7 @@ export async function analyzeTracksWithGemini(options: {
   tracks: SpotifyPlaylistTrack[];
   limit?: number;
 }) {
-  const limit = options.limit ?? 25;
+  const limit = options.limit ?? 40;
   const { tracks: analyzed, inputHash } = await loadAnalyzedTracks({
     accessToken: options.accessToken,
     sourcePlaylistId: options.sourcePlaylist.id,
