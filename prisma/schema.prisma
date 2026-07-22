@@ -32,12 +32,6 @@ model TrackMeta {
   @@index([isrc])
 }
 
-model GenreCache {
-  artistId String   @id
-  genres   String
-  updatedAt DateTime @updatedAt
-}
-
 model AuthToken {
   id           String   @id @default("spotify")
   accessToken  String
@@ -47,32 +41,60 @@ model AuthToken {
 }
 
 model PlaylistPreference {
-  playlistId String   @id
-  position   Int
-  updatedAt  DateTime @updatedAt
+  playlistId  String   @id
+  position    Int
+  description String   @default("")
+  updatedAt   DateTime @updatedAt
 
   @@unique([position])
 }
 
+model PlaylistTrackNote {
+  id          String   @id @default(cuid())
+  playlistId  String
+  trackId     String
+  trackName   String
+  artistNames String
+  note        String
+  updatedAt   DateTime @updatedAt
+
+  @@unique([playlistId, trackId])
+  @@index([playlistId])
+}
+
+model AiSortCache {
+  id                   String   @id @default(cuid())
+  trackId              String
+  sourcePlaylistId     String
+  inputHash            String
+  belongs              Boolean
+  suggestedPlaylistId  String?
+  reason               String
+  updatedAt            DateTime @updatedAt
+
+  @@unique([trackId, sourcePlaylistId, inputHash])
+  @@index([sourcePlaylistId, inputHash])
+}
+
 model DeletedTrack {
-  id           String   @id @default(cuid())
-  playlistId   String
-  playlistName String
-  trackId      String
-  trackName    String
-  artistNames  String
-  trackUri     String
+  id            String   @id @default(cuid())
+  playlistId    String
+  playlistName  String
+  trackId       String
+  trackName     String
+  artistNames   String
+  trackUri      String
   albumImageUrl String?
-  deletedAt    DateTime @default(now())
+  deletedAt     DateTime @default(now())
 
   @@index([deletedAt])
   @@index([playlistId])
 }
 
 model ShuffleDeck {
-  playlistId  String   @id
+  playlistId   String   @id
   usedTrackIds String
-  updatedAt   DateTime @updatedAt
+  updatedAt    DateTime @updatedAt
 }
 
 model PlaylistTrackCache {

@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { PlaylistPreferences } from "@/components/playlist-preferences";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { ensurePlaylistDescriptions } from "@/lib/playlist-sort";
 import {
   getCurrentSpotifyUser,
   getCurrentUserPlaylists,
@@ -43,6 +44,7 @@ export default async function PlaylistSettings() {
   return (
     <SettingsShell>
       <PlaylistPreferences
+        initialDescriptions={data.initialDescriptions}
         initialSelectedIds={data.initialSelectedIds}
         playlists={data.playlists}
       />
@@ -52,6 +54,8 @@ export default async function PlaylistSettings() {
 
 async function loadPlaylistSettings(accessToken: string) {
   try {
+    await ensurePlaylistDescriptions();
+
     const [spotifyUser, allPlaylists, preferences] = await Promise.all([
       getCurrentSpotifyUser(accessToken),
       getCurrentUserPlaylists(accessToken),
@@ -72,9 +76,16 @@ async function loadPlaylistSettings(accessToken: string) {
     const savedIds = preferences
       .map((preference) => preference.playlistId)
       .filter((playlistId) => ownedIds.has(playlistId));
+    const initialDescriptions = Object.fromEntries(
+      preferences.map((preference) => [
+        preference.playlistId,
+        preference.description,
+      ]),
+    );
 
     return {
       playlists,
+      initialDescriptions,
       initialSelectedIds:
         savedIds.length > 0
           ? savedIds
@@ -98,7 +109,8 @@ function SettingsShell({ children }: { children: React.ReactNode }) {
           Playlist settings
         </h1>
         <p className="mt-2 text-sm text-[#a7b0aa]">
-          Choose what appears in the dashboard and arrange its order.
+          Choose playlists for the app, set their order, and write intent
+          descriptions used by AI playlist sort.
         </p>
       </header>
       {children}

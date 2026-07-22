@@ -23,10 +23,10 @@ Spotify account and works with Spotify's Development Mode.
 - Provides Fisher–Yates fair shuffle.
 - Supports fresh shuffles and persistent no-repeat shuffle decks.
 - Offers a weighted shuffle that favors tracks with fewer lifetime plays.
-- Analyzes artist genre tags (from MusicBrainz) and suggests better matching
-  playlists. Spotify's API no longer provides genre data to Development Mode
-  apps, so genre lookups use the open MusicBrainz database, rate-limited to
-  about one artist per second and cached permanently after the first lookup.
+- Analyzes playlist fit with Gemini using your written playlist intents,
+  artist-cohesion rules (keep an artist's songs together when most already
+  live in one playlist), and optional per-track "keep here because…" notes.
+  Suggests a better preferred playlist when a track looks misfiled.
 - Adds tracks to suggested playlists without duplicates.
 - Lets you select and order the playlists shown in the app.
 - Caches large playlist track lists in SQLite to reduce Spotify API usage.
@@ -179,8 +179,9 @@ SQLite stores:
 - Playlist preferences
 - Recently deleted tracks
 - No-repeat shuffle deck progress
-- Artist genre cache
 - Playlist track cache
+- Playlist intent descriptions and AI sort cache
+- Per-track placement notes for playlist sort
 
 Playlist track lists are cached for six hours. Changes made inside FixSpotify
 invalidate the relevant cache immediately. The dashboard also has a
@@ -255,8 +256,6 @@ across deployments.
 The app runs three in-process cron tasks:
 
 - Every hour: fetch and store recent Spotify plays.
-- Every hour: look up genre tags for up to 50 uncached playlist artists using
-  MusicBrainz. A batch also runs when the server starts.
 - Daily: delete recently deleted records older than seven days.
 
 The application container must remain running for these jobs to execute.

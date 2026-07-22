@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 const links = [
   { href: "/dashboard", label: "Least listened" },
   { href: "/shuffle", label: "Fair shuffle" },
-  { href: "/genre-sort", label: "Genre sort" },
+  { href: "/genre-sort", label: "Playlist sort" },
   { href: "/recently-deleted", label: "Recently deleted" },
   { href: "/settings/playlists", label: "Playlists" },
 ] as const;

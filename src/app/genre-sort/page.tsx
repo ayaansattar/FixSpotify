@@ -5,14 +5,11 @@ import { redirect } from "next/navigation";
 import { GenreSortFilters } from "@/components/genre-sort-filters";
 import { GenreTrackList } from "@/components/genre-track-list";
 import { authOptions } from "@/lib/auth";
-import {
-  getGenresForArtists,
-  MATCH_THRESHOLD,
-  scorePlaylistMatch,
-  suggestPlaylist,
-  type PlaylistSuggestion,
-} from "@/lib/genres";
 import { getCachedPlaylistTracks } from "@/lib/playlist-cache";
+import {
+  getPreferredSortPlaylists,
+  loadAnalyzedTracks,
+} from "@/lib/playlist-sort";
 import { getPreferredPlaylists } from "@/lib/playlists";
 import {
   describeSpotifyError,
@@ -26,33 +23,14 @@ type GenreSortPageProps = {
   }>;
 };
 
-type MatchStatus = "match" | "no-match" | "unknown";
-
-type AnalyzedTrack = {
-  id: string;
-  uri: string;
-  name: string;
-  artistNames: string;
-  imageUrl: string | null;
-  genres: string[];
-  status: MatchStatus;
-  suggestion: PlaylistSuggestion | null;
-};
-
 type GenreSortData =
   | { error: string }
   | {
       playlists: SpotifyPlaylist[];
       selectedPlaylist: SpotifyPlaylist | null;
-      tracks: AnalyzedTrack[];
-      pendingArtists: number;
+      tracks: Awaited<ReturnType<typeof loadAnalyzedTracks>>["tracks"];
+      pendingCount: number;
     };
-
-const statusRank: Record<MatchStatus, number> = {
-  "no-match": 0,
-  unknown: 1,
-  match: 2,
-};
 
 export default async function GenreSortPage({
   searchParams,
@@ -103,7 +81,7 @@ export default async function GenreSortPage({
     );
   }
 
-  const { playlists, selectedPlaylist, tracks, pendingArtists } = data;
+  const { playlists, selectedPlaylist, tracks, pendingCount } = data;
   const matchCount = tracks.filter((track) => track.status === "match").length;
   const noMatchCount = tracks.filter(
     (track) => track.status === "no-match",
@@ -112,6 +90,7 @@ export default async function GenreSortPage({
   return (
     <GenreSortShell>
       <GenreSortFilters
+        pendingCount={pendingCount}
         playlists={playlists.map((playlist) => ({
           id: playlist.id,
           name: playlist.name,
@@ -123,29 +102,33 @@ export default async function GenreSortPage({
         <div>
           <h2 className="text-2xl font-semibold">{selectedPlaylist.name}</h2>
           <p className="mt-1 text-sm text-[#a7b0aa]">
-            {matchCount} match{matchCount === 1 ? "" : "es"}, {noMatchCount}{" "}
-            possible misfit{noMatchCount === 1 ? "" : "s"} of {tracks.length}{" "}
-            tracks
+            {matchCount} belong, {noMatchCount} possible misfit
+            {noMatchCount === 1 ? "" : "s"}, {pendingCount} need AI ·{" "}
+            {tracks.length} tracks
           </p>
         </div>
+        <Link
+          className="text-sm text-[#1ed760] hover:underline"
+          href="/settings/playlists"
+        >
+          Edit playlist intents
+        </Link>
       </div>
 
-      {pendingArtists > 0 ? (
-        <p className="mt-5 rounded-xl border border-[#1ed760]/20 bg-[#1ed760]/5 px-4 py-3 text-sm text-[#8cf0ae]">
-          Genre data for {pendingArtists} artist
-          {pendingArtists === 1 ? "" : "s"} is still being collected from
-          MusicBrainz (its rate limit allows about one lookup per second).
-          The background worker processes another batch every hour. Refresh
-          later to see newly completed matches.
+      {!process.env.GEMINI_API_KEY ? (
+        <p className="mt-5 rounded-xl border border-amber-300/20 bg-amber-300/5 px-4 py-3 text-sm text-amber-100">
+          Add <code className="text-amber-50">GEMINI_API_KEY</code> to your{" "}
+          <code className="text-amber-50">.env</code> (free from Google AI
+          Studio) to analyze tracks that still need AI.
         </p>
       ) : null}
 
-      <GenreTrackList tracks={tracks} />
+      <GenreTrackList playlistId={selectedPlaylist.id} tracks={tracks} />
 
       <p className="mt-5 text-xs leading-5 text-[#69736d]">
-        Matches compare each track&apos;s artist genre tags (from the open
-        MusicBrainz database) against your playlist names. Tracks marked
-        &quot;No genre data&quot; have artists MusicBrainz hasn&apos;t tagged.
+        Sorting uses your playlist intent descriptions, artist-cohesion
+        (majority playlist wins), Gemini for the rest, and any &quot;keep here
+        because…&quot; notes you save. Notes override the model for that track.
       </p>
     </GenreSortShell>
   );
@@ -167,10 +150,11 @@ async function loadGenreSortData(
         playlists,
         selectedPlaylist: null,
         tracks: [],
-        pendingArtists: 0,
+        pendingCount: 0,
       };
     }
 
+    const sortPlaylists = await getPreferredSortPlaylists(playlists);
     const playlistTracks = await getCachedPlaylistTracks(
       accessToken,
       selectedPlaylist.id,
@@ -179,56 +163,18 @@ async function loadGenreSortData(
       new Map(playlistTracks.map((track) => [track.id, track])).values(),
     );
 
-    const artistRefs = uniqueTracks.flatMap((track) =>
-      track.artists.map((artist) => ({ id: artist.id, name: artist.name })),
-    );
-    const { genresByArtist, pendingArtists } =
-      await getGenresForArtists(artistRefs);
+    const { tracks, pendingCount } = await loadAnalyzedTracks({
+      accessToken,
+      sourcePlaylistId: selectedPlaylist.id,
+      playlists: sortPlaylists,
+      tracks: uniqueTracks,
+    });
 
-    const otherPlaylists = playlists
-      .filter((playlist) => playlist.id !== selectedPlaylist.id)
-      .map((playlist) => ({ id: playlist.id, name: playlist.name }));
-
-    const tracks = uniqueTracks
-      .map((track): AnalyzedTrack => {
-        const genres = Array.from(
-          new Set(
-            track.artists.flatMap(
-              (artist) => genresByArtist.get(artist.id) ?? [],
-            ),
-          ),
-        );
-        const status: MatchStatus =
-          genres.length === 0
-            ? "unknown"
-            : scorePlaylistMatch(genres, selectedPlaylist.name) >=
-                MATCH_THRESHOLD
-              ? "match"
-              : "no-match";
-
-        return {
-          id: track.id,
-          uri: track.uri,
-          name: track.name,
-          artistNames: track.artists.map((artist) => artist.name).join(", "),
-          imageUrl: track.imageUrl,
-          genres,
-          status,
-          suggestion:
-            status === "no-match"
-              ? suggestPlaylist(genres, otherPlaylists)
-              : null,
-        };
-      })
-      .sort(
-        (a, b) =>
-          statusRank[a.status] - statusRank[b.status] ||
-          a.name.localeCompare(b.name),
-      );
-
-    return { playlists, selectedPlaylist, tracks, pendingArtists };
+    return { playlists, selectedPlaylist, tracks, pendingCount };
   } catch (error) {
-    return { error: describeSpotifyError(error, "Unable to analyze genres.") };
+    return {
+      error: describeSpotifyError(error, "Unable to analyze playlist."),
+    };
   }
 }
 
@@ -236,10 +182,11 @@ function GenreSortShell({ children }: { children: React.ReactNode }) {
   return (
     <main className="mx-auto min-h-screen w-full max-w-5xl px-6 py-10 sm:py-16">
       <header className="mb-8">
-        <h1 className="text-3xl font-bold tracking-tight">Genre sort</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Playlist sort</h1>
         <p className="mt-2 max-w-2xl text-sm text-[#a7b0aa]">
-          Checks whether each track&apos;s genres fit the playlist it lives
-          in, and suggests a better home when they don&apos;t.
+          Checks whether each track fits the playlist&apos;s intent, keeps
+          artists together when most of their songs already live in one place,
+          and suggests a better home when they don&apos;t.
         </p>
       </header>
       {children}

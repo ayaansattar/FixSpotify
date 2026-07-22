@@ -66,9 +66,9 @@ export default async function Home() {
               title="Fair shuffle"
             />
             <HomeCard
-              description="Spot misfiled tracks and move them to a better home."
+              description="Spot misfits using playlist intent, artist cohesion, and Gemini."
               href="/genre-sort"
-              title="Genre sort"
+              title="Playlist sort"
             />
           </nav>
         ) : null}

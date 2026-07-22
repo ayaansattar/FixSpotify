@@ -10,13 +10,18 @@ type Playlist = {
 type PlaylistPreferencesProps = {
   playlists: Playlist[];
   initialSelectedIds: string[];
+  initialDescriptions: Record<string, string>;
 };
 
 export function PlaylistPreferences({
   playlists,
   initialSelectedIds,
+  initialDescriptions,
 }: PlaylistPreferencesProps) {
   const [selectedIds, setSelectedIds] = useState(initialSelectedIds);
+  const [descriptions, setDescriptions] = useState<Record<string, string>>(
+    initialDescriptions,
+  );
   const [search, setSearch] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -73,7 +78,12 @@ export function PlaylistPreferences({
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ playlistIds: selectedIds }),
+        body: JSON.stringify({
+          playlists: selectedIds.map((id) => ({
+            id,
+            description: descriptions[id] ?? "",
+          })),
+        }),
       });
       const result = (await response.json()) as {
         error?: string;
@@ -101,9 +111,12 @@ export function PlaylistPreferences({
       <section>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-xl font-semibold">Shown in dashboard</h2>
+            <h2 className="text-xl font-semibold">Shown in the app</h2>
             <p className="mt-1 text-sm text-[#a7b0aa]">
-              Top to bottom is the dropdown order.
+              Order for dropdowns, plus intent descriptions for AI playlist
+              sort. Artist cohesion is included in the defaults: keep an
+              artist&apos;s songs together when most already live in one
+              playlist.
             </p>
           </div>
           <button
@@ -112,7 +125,7 @@ export function PlaylistPreferences({
             onClick={() => void save()}
             type="button"
           >
-            {saving ? "Saving…" : "Save order"}
+            {saving ? "Saving…" : "Save"}
           </button>
         </div>
 
@@ -122,7 +135,7 @@ export function PlaylistPreferences({
           </p>
         ) : null}
 
-        <ol className="overflow-hidden rounded-2xl border border-white/10">
+        <ol className="space-y-4">
           {selectedIds.map((playlistId, index) => {
             const playlist = playlistById.get(playlistId);
 
@@ -132,48 +145,66 @@ export function PlaylistPreferences({
 
             return (
               <li
-                className="grid grid-cols-[2rem_1fr_auto] items-center gap-3 border-b border-white/10 px-4 py-3 last:border-b-0"
+                className="rounded-2xl border border-white/10 bg-white/[0.03] p-4"
                 key={playlist.id}
               >
-                <span className="text-sm tabular-nums text-[#69736d]">
-                  {index + 1}
-                </span>
-                <span className="min-w-0 truncate font-medium">
-                  {playlist.name}
-                </span>
-                <div className="flex gap-1">
-                  <button
-                    aria-label={`Move ${playlist.name} up`}
-                    className="cursor-pointer rounded-lg px-2 py-1 text-[#a7b0aa] hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
-                    disabled={index === 0}
-                    onClick={() => move(index, -1)}
-                    type="button"
-                  >
-                    ↑
-                  </button>
-                  <button
-                    aria-label={`Move ${playlist.name} down`}
-                    className="cursor-pointer rounded-lg px-2 py-1 text-[#a7b0aa] hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
-                    disabled={index === selectedIds.length - 1}
-                    onClick={() => move(index, 1)}
-                    type="button"
-                  >
-                    ↓
-                  </button>
-                  <button
-                    aria-label={`Remove ${playlist.name}`}
-                    className="cursor-pointer rounded-lg px-2 py-1 text-red-300 hover:bg-red-300/10"
-                    onClick={() => remove(playlist.id)}
-                    type="button"
-                  >
-                    Remove
-                  </button>
+                <div className="grid grid-cols-[2rem_1fr_auto] items-center gap-3">
+                  <span className="text-sm tabular-nums text-[#69736d]">
+                    {index + 1}
+                  </span>
+                  <span className="min-w-0 truncate font-medium">
+                    {playlist.name}
+                  </span>
+                  <div className="flex gap-1">
+                    <button
+                      aria-label={`Move ${playlist.name} up`}
+                      className="cursor-pointer rounded-lg px-2 py-1 text-[#a7b0aa] hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+                      disabled={index === 0}
+                      onClick={() => move(index, -1)}
+                      type="button"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      aria-label={`Move ${playlist.name} down`}
+                      className="cursor-pointer rounded-lg px-2 py-1 text-[#a7b0aa] hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+                      disabled={index === selectedIds.length - 1}
+                      onClick={() => move(index, 1)}
+                      type="button"
+                    >
+                      ↓
+                    </button>
+                    <button
+                      aria-label={`Remove ${playlist.name}`}
+                      className="cursor-pointer rounded-lg px-2 py-1 text-red-300 hover:bg-red-300/10"
+                      onClick={() => remove(playlist.id)}
+                      type="button"
+                    >
+                      Remove
+                    </button>
+                  </div>
                 </div>
+                <label className="mt-3 block text-xs font-medium uppercase tracking-wide text-[#69736d]">
+                  Intent for AI
+                  <textarea
+                    className="mt-1.5 min-h-24 w-full rounded-xl border border-white/15 bg-[#111713] px-3 py-2 text-sm font-normal normal-case tracking-normal text-white placeholder:text-[#69736d]"
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setDescriptions((current) => ({
+                        ...current,
+                        [playlist.id]: value,
+                      }));
+                      setMessage(null);
+                    }}
+                    placeholder="Describe what belongs in this playlist…"
+                    value={descriptions[playlist.id] ?? ""}
+                  />
+                </label>
               </li>
             );
           })}
           {selectedIds.length === 0 ? (
-            <li className="p-6 text-sm text-[#a7b0aa]">
+            <li className="rounded-2xl border border-white/10 p-6 text-sm text-[#a7b0aa]">
               Add at least one playlist from the list beside this one.
             </li>
           ) : null}
@@ -196,7 +227,7 @@ export function PlaylistPreferences({
       <section>
         <h2 className="text-xl font-semibold">Other owned playlists</h2>
         <p className="mt-1 text-sm text-[#a7b0aa]">
-          Add a playlist to place it at the bottom of your dashboard order.
+          Add a playlist to place it at the bottom of your list.
         </p>
         <input
           className="mt-4 w-full rounded-xl border border-white/15 bg-[#111713] px-4 py-3 text-white placeholder:text-[#69736d]"

@@ -5,14 +5,13 @@ export default function GenreSortLoading() {
         <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#1ed760]">
           Spotify Manager
         </p>
-        <h1 className="mt-2 text-3xl font-bold tracking-tight">Genre sort</h1>
+        <h1 className="mt-2 text-3xl font-bold tracking-tight">Playlist sort</h1>
       </header>
 
       <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-6">
         <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-[#1ed760] border-t-transparent" />
         <p className="text-[#a7b0aa]">
-          Loading tracks and artist genres… the first visit to a playlist can
-          take a little while.
+          Loading playlist tracks and sort hints…
         </p>
       </div>
 
