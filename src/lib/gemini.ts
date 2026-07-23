@@ -2,9 +2,14 @@ import { createHash } from "node:crypto";
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const DEFAULT_MODEL = "gemini-2.0-flash";
+const DEFAULT_MODEL = "gemini-flash-latest";
+const FALLBACK_MODELS = [
+  "gemini-flash-latest",
+  "gemini-2.0-flash-lite",
+  "gemini-2.0-flash",
+];
 
-export function getGeminiModel() {
+export function getGeminiModel(modelName = process.env.GEMINI_MODEL?.trim() || DEFAULT_MODEL) {
   const apiKey = process.env.GEMINI_API_KEY;
 
   if (!apiKey) {
@@ -15,7 +20,7 @@ export function getGeminiModel() {
 
   const genAI = new GoogleGenerativeAI(apiKey);
   return genAI.getGenerativeModel({
-    model: process.env.GEMINI_MODEL?.trim() || DEFAULT_MODEL,
+    model: modelName,
     generationConfig: {
       temperature: 0.2,
       responseMimeType: "application/json",
@@ -62,7 +67,6 @@ export async function sortTracksWithGemini(options: {
     note: string;
   }>;
 }): Promise<SortTrackResult[]> {
-  const model = getGeminiModel();
   const playlistIds = new Set(options.playlists.map((playlist) => playlist.id));
 
   const prompt = `You help organize a personal Spotify library.
@@ -131,8 +135,7 @@ Rules:
 - Prefer artist majority homes when relevant.
 - Honor user placement notes absolutely for those tracks.`;
 
-  const response = await model.generateContent(prompt);
-  const text = response.response.text();
+  const text = await generateWithFallback(prompt);
   const parsed = JSON.parse(extractJson(text)) as unknown;
 
   if (!Array.isArray(parsed)) {
@@ -197,6 +200,46 @@ Rules:
   }
 
   return results;
+}
+
+async function generateWithFallback(prompt: string) {
+  const preferred = process.env.GEMINI_MODEL?.trim();
+  const models = preferred
+    ? [preferred, ...FALLBACK_MODELS.filter((model) => model !== preferred)]
+    : FALLBACK_MODELS;
+
+  let lastError: Error | null = null;
+
+  for (const modelName of models) {
+    try {
+      const model = getGeminiModel(modelName);
+      const response = await model.generateContent(prompt);
+      return response.response.text();
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      const message = lastError.message;
+      // Try the next model on quota / not-found; stop on auth errors.
+      if (/API key|PERMISSION|401|403/i.test(message) && !/429|quota/i.test(message)) {
+        break;
+      }
+    }
+  }
+
+  throw new Error(formatGeminiError(lastError));
+}
+
+function formatGeminiError(error: Error | null) {
+  const message = error?.message ?? "Unknown Gemini error.";
+
+  if (/429|quota|Too Many Requests/i.test(message)) {
+    return "Gemini free-tier quota is exhausted for the default models. Wait a bit and try again, or set GEMINI_MODEL=gemini-flash-latest in .env.";
+  }
+
+  if (/404|no longer available/i.test(message)) {
+    return "That Gemini model is unavailable. Set GEMINI_MODEL=gemini-flash-latest in .env.";
+  }
+
+  return message.length > 280 ? `${message.slice(0, 280)}…` : message;
 }
 
 function extractJson(text: string) {
