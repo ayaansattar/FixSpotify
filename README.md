@@ -10,11 +10,13 @@ Spotify account and works with Spotify's Development Mode.
 ## Features
 
 - Imports Spotify Extended Streaming History.
-- Automatically syncs recent plays every hour.
+- Automatically syncs recent plays every hour, with a manual sync from the home
+  page.
 - Ranks playlist tracks by least-listened over 6 months, 1 year, or lifetime.
 - Identifies tracks that Spotify marks unavailable in the listener's market.
 - Searches and filters dashboard tracks by title, artist, availability, and
   play-count ranges.
+- Plays a single track on the active Spotify device, or opens it in Spotify.
 - Merges play counts across alternate Spotify track IDs using title/artist
   matching and ISRC identity (so localized titles like Arabic/Latin versions
   of the same recording count together).
@@ -23,11 +25,16 @@ Spotify account and works with Spotify's Development Mode.
 - Provides Fisher–Yates fair shuffle.
 - Supports fresh shuffles and persistent no-repeat shuffle decks.
 - Offers a weighted shuffle that favors tracks with fewer lifetime plays.
+- Mixes multiple preferred playlists into one shuffle pool (master mix).
+- Skips unplayable tracks when shuffling and previews the resulting order
+  (Spotify playback accepts up to 100 URIs per request).
 - Analyzes playlist fit with Gemini using your written playlist intents,
   artist-cohesion rules (keep an artist's songs together when most already
   live in one playlist), and optional per-track "keep here because…" notes.
+  Shows belong / possible misfit / needs AI status for each track.
   Suggests a better preferred playlist when a track looks misfiled.
-- Adds tracks to suggested playlists without duplicates.
+- Adds tracks to suggested playlists without duplicates, and can remove them
+  from the current playlist afterward.
 - Lets you select and order the playlists shown in the app.
 - Caches large playlist track lists in SQLite to reduce Spotify API usage.
 
@@ -253,7 +260,7 @@ across deployments.
 
 ## Scheduled tasks
 
-The app runs three in-process cron tasks:
+The app runs two in-process cron tasks:
 
 - Every hour: fetch and store recent Spotify plays.
 - Daily: delete recently deleted records older than seven days.
