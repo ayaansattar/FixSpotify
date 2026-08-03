@@ -35,6 +35,15 @@ type ColorArchiveListProps = {
 };
 
 const PREVIEW_SIZE = 280;
+/** Tighter band to *acquire* focus / show the cover. */
+const ENTER_TOP = 0.24;
+const ENTER_BOTTOM = 0.66;
+/** Wider band to *keep* the current song (hysteresis — stops edge flicker). */
+const EXIT_TOP = 0.1;
+const EXIT_BOTTOM = 0.86;
+/** px — another song must be this much closer to steal focus. */
+const SWITCH_MARGIN_PX = 48;
+const PREVIEW_FADE_MS = 180;
 
 /**
  * Skiper-inspired finite color archive: window scroll focuses one song, the
@@ -49,8 +58,12 @@ export function ColorArchiveList({
   onActiveChange,
 }: ColorArchiveListProps) {
   const listRef = useRef<HTMLOListElement>(null);
-  const rowRefs = useRef<Array<HTMLLIElement | null>>([]);
-  const [activeIndex, setActiveIndex] = useState(0);
+  /** Title rows only — exclude the expanding action panel from focus math. */
+  const rowRefs = useRef<Array<HTMLElement | null>>([]);
+  const activeIndexRef = useRef<number | null>(null);
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewVisible, setPreviewVisible] = useState(false);
   const [previewOffset, setPreviewOffset] = useState({ x: 0, y: 0 });
   const dragRef = useRef<{
     pointerId: number;
@@ -71,19 +84,24 @@ export function ColorArchiveList({
   );
   const colors = useTrackColors(colorSources);
 
-  const activeItem = items[activeIndex] ?? null;
+  const activeItem =
+    activeIndex === null ? null : (items[activeIndex] ?? null);
   const activeImageUrl =
     upgradeAlbumImageUrl(activeItem?.imageUrl) ?? activeItem?.imageUrl ?? null;
-  const background =
-    (activeItem && colors.get(activeItem.id)) ||
-    (items[0] ? colors.get(items[0].id) : null) ||
-    "hsl(150 30% 18%)";
+  const background = activeItem ? colors.get(activeItem.id) ?? null : null;
 
-  // Paint the whole viewport, not a contained card.
+  // Full-viewport wash only while a song is in the focus band; otherwise
+  // restore the normal site background.
   useEffect(() => {
     const { body, documentElement } = document;
-    documentElement.style.setProperty("--archive-bg", background);
-    body.classList.add("archive-fullscreen");
+
+    if (background) {
+      documentElement.style.setProperty("--archive-bg", background);
+      body.classList.add("archive-fullscreen");
+    } else {
+      documentElement.style.removeProperty("--archive-bg");
+      body.classList.remove("archive-fullscreen");
+    }
 
     return () => {
       documentElement.style.removeProperty("--archive-bg");
@@ -91,42 +109,104 @@ export function ColorArchiveList({
     };
   }, [background]);
 
+  // Soft fade the cover so enter/leave doesn't pop or thrash the image.
+  useEffect(() => {
+    if (activeImageUrl) {
+      setPreviewUrl(activeImageUrl);
+      const frame = requestAnimationFrame(() => setPreviewVisible(true));
+      return () => cancelAnimationFrame(frame);
+    }
+
+    setPreviewVisible(false);
+    const timeout = window.setTimeout(() => {
+      setPreviewUrl(null);
+      setPreviewOffset({ x: 0, y: 0 });
+    }, PREVIEW_FADE_MS);
+    return () => window.clearTimeout(timeout);
+  }, [activeImageUrl]);
+
+  const commitActiveIndex = useCallback((next: number | null) => {
+    if (activeIndexRef.current === next) {
+      return;
+    }
+    activeIndexRef.current = next;
+    setActiveIndex(next);
+  }, []);
+
   const updateActiveFromScroll = useCallback(() => {
     if (items.length === 0) {
+      commitActiveIndex(null);
       return;
     }
 
-    const focusY = window.innerHeight * 0.4;
-    let bestIndex = 0;
-    let bestDistance = Number.POSITIVE_INFINITY;
+    const viewport = window.innerHeight;
+    const enterTop = viewport * ENTER_TOP;
+    const enterBottom = viewport * ENTER_BOTTOM;
+    const exitTop = viewport * EXIT_TOP;
+    const exitBottom = viewport * EXIT_BOTTOM;
+    const focusY = (enterTop + enterBottom) / 2;
 
-    for (let i = 0; i < rowRefs.current.length; i += 1) {
-      const row = rowRefs.current[i];
+    const midFor = (index: number) => {
+      const row = rowRefs.current[index];
       if (!row) {
-        continue;
+        return null;
       }
       const rect = row.getBoundingClientRect();
-      const mid = rect.top + rect.height / 2;
+      return rect.top + rect.height / 2;
+    };
+
+    let bestEnterIndex: number | null = null;
+    let bestEnterDistance = Number.POSITIVE_INFINITY;
+
+    for (let i = 0; i < rowRefs.current.length; i += 1) {
+      const mid = midFor(i);
+      if (mid === null || mid < enterTop || mid > enterBottom) {
+        continue;
+      }
       const distance = Math.abs(mid - focusY);
-      if (distance < bestDistance) {
-        bestDistance = distance;
-        bestIndex = i;
+      if (distance < bestEnterDistance) {
+        bestEnterDistance = distance;
+        bestEnterIndex = i;
       }
     }
 
-    setActiveIndex((current) => (current === bestIndex ? current : bestIndex));
-  }, [items.length]);
+    const current = activeIndexRef.current;
+    if (current !== null) {
+      const currentMid = midFor(current);
+      const stillHeld =
+        currentMid !== null &&
+        currentMid >= exitTop &&
+        currentMid <= exitBottom;
+
+      if (stillHeld) {
+        if (
+          bestEnterIndex === null ||
+          bestEnterIndex === current ||
+          Math.abs((currentMid ?? focusY) - focusY) <=
+            bestEnterDistance + SWITCH_MARGIN_PX
+        ) {
+          commitActiveIndex(current);
+          return;
+        }
+      }
+    }
+
+    commitActiveIndex(bestEnterIndex);
+  }, [commitActiveIndex, items.length]);
 
   useEffect(() => {
     rowRefs.current = rowRefs.current.slice(0, items.length);
-    setActiveIndex(0);
+    activeIndexRef.current = null;
+    setActiveIndex(null);
+    setPreviewVisible(false);
+    setPreviewUrl(null);
     setPreviewOffset({ x: 0, y: 0 });
     const frame = requestAnimationFrame(updateActiveFromScroll);
     return () => cancelAnimationFrame(frame);
   }, [items, updateActiveFromScroll]);
 
   useEffect(() => {
-    onActiveChange?.(activeItem, activeIndex);
+    onActiveChange?.(activeItem, activeIndex ?? -1);
   }, [activeItem, activeIndex, onActiveChange]);
 
   useEffect(() => {
@@ -146,7 +226,6 @@ export function ColorArchiveList({
       behavior: "smooth",
       block: "center",
     });
-    setActiveIndex(index);
   }
 
   function onPreviewPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
@@ -177,13 +256,15 @@ export function ColorArchiveList({
     }
   }
 
+  const onColoredBg = Boolean(background);
+
   if (items.length === 0) {
     return null;
   }
 
   return (
     <div className={`color-archive relative mt-8 ${className}`}>
-      {activeImageUrl ? (
+      {previewUrl ? (
         <div
           aria-hidden
           className="fixed bottom-[12%] right-[6%] z-30 cursor-grab touch-none active:cursor-grabbing sm:bottom-[14%] sm:right-[8%]"
@@ -196,7 +277,10 @@ export function ColorArchiveList({
             height: PREVIEW_SIZE,
             maxWidth: "min(280px, 46vw)",
             maxHeight: "min(280px, 46vw)",
+            opacity: previewVisible ? 1 : 0,
             transform: `translate3d(${previewOffset.x}px, ${previewOffset.y}px, 0)`,
+            transition: `opacity ${PREVIEW_FADE_MS}ms ease`,
+            pointerEvents: previewVisible ? "auto" : "none",
           }}
         >
           {/* Spotify CDN URLs; plain img avoids next/image remote-pattern config. */}
@@ -206,8 +290,7 @@ export function ColorArchiveList({
             className="h-full w-full rounded-2xl object-cover shadow-2xl shadow-black/35 ring-1 ring-black/10"
             draggable={false}
             height={640}
-            key={activeImageUrl}
-            src={activeImageUrl}
+            src={previewUrl}
             width={640}
           />
         </div>
@@ -219,21 +302,29 @@ export function ColorArchiveList({
         ref={listRef}
       >
         {items.map((item, index) => {
-          const isActive = index === activeIndex;
-          const distance = Math.abs(index - activeIndex);
+          const isActive = activeIndex !== null && index === activeIndex;
+          const distance =
+            activeIndex === null ? 2 : Math.abs(index - activeIndex);
           const opacity =
-            distance === 0 ? 1 : distance === 1 ? 0.42 : distance === 2 ? 0.24 : 0.14;
+            activeIndex === null
+              ? 0.55
+              : distance === 0
+                ? 1
+                : distance === 1
+                  ? 0.42
+                  : distance === 2
+                    ? 0.24
+                    : 0.14;
 
           return (
             <li
-              className="border-b border-black/10 last:border-b-0"
+              className={`border-b last:border-b-0 ${
+                onColoredBg ? "border-black/10" : "border-white/10"
+              }`}
               key={`${item.id}-${index}`}
-              ref={(node) => {
-                rowRefs.current[index] = node;
-              }}
             >
               <div
-                className="flex w-full max-w-[min(100%,36rem)] cursor-pointer flex-col gap-1 py-5 text-left transition-[opacity,transform] duration-300 sm:max-w-[min(100%,40rem)]"
+                className="flex w-full max-w-[min(100%,36rem)] cursor-pointer flex-col gap-1 py-5 text-left transition-[opacity,transform,color] duration-300 sm:max-w-[min(100%,40rem)]"
                 onClick={() => focusRow(index)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" || event.key === " ") {
@@ -241,11 +332,20 @@ export function ColorArchiveList({
                     focusRow(index);
                   }
                 }}
+                ref={(node) => {
+                  rowRefs.current[index] = node;
+                }}
                 role="button"
                 style={{
                   opacity,
                   transform: isActive ? "scale(1)" : "scale(0.985)",
-                  color: isActive ? "#0a0a0a" : "rgb(0 0 0 / 55%)",
+                  color: onColoredBg
+                    ? isActive
+                      ? "#0a0a0a"
+                      : "rgb(0 0 0 / 55%)"
+                    : isActive
+                      ? "#f4f7f5"
+                      : "rgb(244 247 245 / 55%)",
                 }}
                 tabIndex={0}
               >
@@ -259,7 +359,13 @@ export function ColorArchiveList({
                 {item.subtitle ? (
                   <span
                     className={`truncate text-sm sm:text-base ${
-                      isActive ? "text-black/70" : "text-black/45"
+                      onColoredBg
+                        ? isActive
+                          ? "text-black/70"
+                          : "text-black/45"
+                        : isActive
+                          ? "text-white/70"
+                          : "text-white/45"
                     }`}
                   >
                     {item.subtitle}
@@ -268,9 +374,13 @@ export function ColorArchiveList({
                 {item.badge ? (
                   <span
                     className={`mt-1 w-fit rounded-full px-3 py-1 text-xs font-semibold sm:text-sm ${
-                      isActive
-                        ? "bg-black/10 text-black"
-                        : "bg-black/5 text-black/55"
+                      onColoredBg
+                        ? isActive
+                          ? "bg-black/10 text-black"
+                          : "bg-black/5 text-black/55"
+                        : isActive
+                          ? "bg-white/10 text-white"
+                          : "bg-white/5 text-white/55"
                     }`}
                   >
                     {item.badge}
@@ -279,7 +389,11 @@ export function ColorArchiveList({
               </div>
 
               {isActive && renderActivePanel ? (
-                <div className="max-w-[min(100%,36rem)] pb-5 text-black/80 sm:max-w-[min(100%,40rem)]">
+                <div
+                  className={`max-w-[min(100%,36rem)] pb-5 sm:max-w-[min(100%,40rem)] ${
+                    onColoredBg ? "text-black/80" : "text-white/80"
+                  }`}
+                >
                   {renderActivePanel(item, index)}
                 </div>
               ) : null}
