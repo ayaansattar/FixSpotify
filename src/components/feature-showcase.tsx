@@ -4,6 +4,8 @@ import Link from "next/link";
 import { signIn } from "next-auth/react";
 import { useEffect, useState } from "react";
 
+import { SyncButton } from "@/components/sync-button";
+
 export type ShowcaseFeature = {
   id: string;
   title: string;
@@ -124,12 +126,15 @@ export function FeatureShowcase({
 
           <div className="mt-8 flex flex-wrap items-center gap-3">
             {isSignedIn ? (
-              <Link
-                className="rounded-full bg-[#1ed760] px-6 py-3 text-sm font-semibold text-[#07150c] hover:opacity-90"
-                href="/dashboard"
-              >
-                Open dashboard
-              </Link>
+              <>
+                <Link
+                  className="rounded-full bg-[#1ed760] px-6 py-3 text-sm font-semibold text-[#07150c] hover:opacity-90"
+                  href="/dashboard"
+                >
+                  Open dashboard
+                </Link>
+                <SyncButton />
+              </>
             ) : (
               <button
                 className="cursor-pointer rounded-full bg-[#1ed760] px-6 py-3 text-sm font-semibold text-[#07150c] hover:opacity-90"

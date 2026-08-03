@@ -41,7 +41,7 @@ export function SyncButton() {
   return (
     <div className="flex flex-col items-start gap-3">
       <button
-        className="cursor-pointer rounded-full border border-white/20 bg-white/10 px-6 py-3 font-semibold text-white hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-60"
+        className="cursor-pointer rounded-full border border-white/20 bg-white/10 px-6 py-3 text-sm font-semibold text-white hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-60"
         disabled={loading}
         onClick={() => void handleSync()}
         type="button"

@@ -22,6 +22,14 @@ const features = [
     href: "/shuffle",
   },
   {
+    id: "master-mix",
+    title: "Master mix",
+    description:
+      "Pool tracks from multiple preferred playlists into one shuffle — fair, weighted, or no-repeat — without merging playlists in Spotify.",
+    demoSrc: "/demos/master-mix.webm",
+    href: "/shuffle",
+  },
+  {
     id: "playlist-sort",
     title: "Playlist sort",
     description:

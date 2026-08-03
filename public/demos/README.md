@@ -7,6 +7,7 @@ these filenames automatically:
 |------|---------|
 | `least-listened.webm` | Least listened dashboard |
 | `fair-shuffle.webm` | Fair / weighted / deck shuffle |
+| `master-mix.webm` | Multi-playlist master mix shuffle |
 | `playlist-sort.webm` | Gemini playlist sort |
 | `recently-deleted.webm` | Restore from recently deleted |
 | `playlists.webm` | Playlist preferences / intents |
