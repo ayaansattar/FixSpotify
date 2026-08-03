@@ -38,9 +38,12 @@ const PREVIEW_SIZE = 280;
 /** Tighter band to *acquire* focus / show the cover. */
 const ENTER_TOP = 0.24;
 const ENTER_BOTTOM = 0.66;
-/** Wider band to *keep* the current song (hysteresis — stops edge flicker). */
-const EXIT_TOP = 0.1;
-const EXIT_BOTTOM = 0.86;
+/**
+ * Slightly wider band to *keep* the current song (stops edge flicker),
+ * but not so wide that a barely-visible last song still owns the cover.
+ */
+const EXIT_TOP = 0.2;
+const EXIT_BOTTOM = 0.72;
 /** px — another song must be this much closer to steal focus. */
 const SWITCH_MARGIN_PX = 48;
 const PREVIEW_FADE_MS = 180;
@@ -173,7 +176,15 @@ export function ColorArchiveList({
     const current = activeIndexRef.current;
     if (current !== null) {
       const currentMid = midFor(current);
+      const currentRow = rowRefs.current[current];
+      const currentRect = currentRow?.getBoundingClientRect() ?? null;
+
+      // Release once the title has mostly left the focus zone (common when
+      // scrolling into the bottom padding past the last song).
+      const mostlyAboveFocus =
+        currentRect !== null && currentRect.bottom < enterTop;
       const stillHeld =
+        !mostlyAboveFocus &&
         currentMid !== null &&
         currentMid >= exitTop &&
         currentMid <= exitBottom;
