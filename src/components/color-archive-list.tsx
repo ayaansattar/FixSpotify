@@ -11,11 +11,15 @@ import {
 } from "react";
 
 import { useTrackColors } from "@/hooks/use-track-colors";
+import { upgradeAlbumImageUrl } from "@/lib/spotify";
 
 export type ColorArchiveItem = {
   id: string;
   title: string;
-  badge: string;
+  /** Secondary line under the title (artist name, etc.). */
+  subtitle?: string;
+  /** Optional short pill (status, position). Kept left of the preview. */
+  badge?: string;
   imageUrl?: string | null;
   /** Seed for fallback palette (artist name recommended). */
   colorKey: string;
@@ -30,12 +34,13 @@ type ColorArchiveListProps = {
   onActiveChange?: (item: ColorArchiveItem | null, index: number) => void;
 };
 
-const PREVIEW_SIZE = 220;
+const PREVIEW_SIZE = 280;
 
 /**
- * Skiper-inspired finite color archive: scroll focuses one song, the page
- * color shifts to that track's album/artist palette, and a draggable album
- * cover floats as the preview. Does not loop past the last track.
+ * Skiper-inspired finite color archive: window scroll focuses one song, the
+ * full viewport color shifts to that track's album/artist palette, and a
+ * draggable album cover floats as the preview. Does not loop past the last
+ * track.
  */
 export function ColorArchiveList({
   items,
@@ -43,7 +48,7 @@ export function ColorArchiveList({
   renderActivePanel,
   onActiveChange,
 }: ColorArchiveListProps) {
-  const scrollerRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLOListElement>(null);
   const rowRefs = useRef<Array<HTMLLIElement | null>>([]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [previewOffset, setPreviewOffset] = useState({ x: 0, y: 0 });
@@ -60,25 +65,38 @@ export function ColorArchiveList({
       items.map((item) => ({
         id: item.id,
         colorKey: item.colorKey,
-        imageUrl: item.imageUrl,
+        imageUrl: upgradeAlbumImageUrl(item.imageUrl) ?? item.imageUrl,
       })),
     [items],
   );
   const colors = useTrackColors(colorSources);
 
   const activeItem = items[activeIndex] ?? null;
+  const activeImageUrl =
+    upgradeAlbumImageUrl(activeItem?.imageUrl) ?? activeItem?.imageUrl ?? null;
   const background =
     (activeItem && colors.get(activeItem.id)) ||
     (items[0] ? colors.get(items[0].id) : null) ||
     "hsl(150 30% 18%)";
 
+  // Paint the whole viewport, not a contained card.
+  useEffect(() => {
+    const { body, documentElement } = document;
+    documentElement.style.setProperty("--archive-bg", background);
+    body.classList.add("archive-fullscreen");
+
+    return () => {
+      documentElement.style.removeProperty("--archive-bg");
+      body.classList.remove("archive-fullscreen");
+    };
+  }, [background]);
+
   const updateActiveFromScroll = useCallback(() => {
-    const root = scrollerRef.current;
-    if (!root || items.length === 0) {
+    if (items.length === 0) {
       return;
     }
 
-    const focusY = root.getBoundingClientRect().top + root.clientHeight * 0.38;
+    const focusY = window.innerHeight * 0.4;
     let bestIndex = 0;
     let bestDistance = Number.POSITIVE_INFINITY;
 
@@ -112,21 +130,24 @@ export function ColorArchiveList({
   }, [activeItem, activeIndex, onActiveChange]);
 
   useEffect(() => {
-    const root = scrollerRef.current;
-    if (!root) {
-      return;
-    }
-
     const onScroll = () => updateActiveFromScroll();
-    root.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("resize", onScroll);
     updateActiveFromScroll();
 
     return () => {
-      root.removeEventListener("scroll", onScroll);
+      window.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", onScroll);
     };
   }, [updateActiveFromScroll]);
+
+  function focusRow(index: number) {
+    rowRefs.current[index]?.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+    setActiveIndex(index);
+  }
 
   function onPreviewPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -161,25 +182,11 @@ export function ColorArchiveList({
   }
 
   return (
-    <div
-      className={`color-archive relative isolate mt-5 overflow-hidden rounded-3xl ${className}`}
-      style={{
-        backgroundColor: background,
-        transition: "background-color 420ms ease",
-      }}
-    >
-      <div
-        className="pointer-events-none absolute inset-0 opacity-30"
-        style={{
-          background:
-            "radial-gradient(circle at 80% 20%, rgb(255 255 255 / 28%), transparent 42%)",
-        }}
-      />
-
-      {activeItem?.imageUrl ? (
+    <div className={`color-archive relative mt-8 ${className}`}>
+      {activeImageUrl ? (
         <div
           aria-hidden
-          className="absolute right-[6%] top-[12%] z-20 cursor-grab touch-none active:cursor-grabbing sm:right-[8%] sm:top-[18%]"
+          className="fixed bottom-[12%] right-[6%] z-30 cursor-grab touch-none active:cursor-grabbing sm:bottom-[14%] sm:right-[8%]"
           onPointerDown={onPreviewPointerDown}
           onPointerMove={onPreviewPointerMove}
           onPointerUp={onPreviewPointerUp}
@@ -187,10 +194,9 @@ export function ColorArchiveList({
           style={{
             width: PREVIEW_SIZE,
             height: PREVIEW_SIZE,
-            maxWidth: "42vw",
-            maxHeight: "42vw",
+            maxWidth: "min(280px, 46vw)",
+            maxHeight: "min(280px, 46vw)",
             transform: `translate3d(${previewOffset.x}px, ${previewOffset.y}px, 0)`,
-            pointerEvents: "auto",
           }}
         >
           {/* Spotify CDN URLs; plain img avoids next/image remote-pattern config. */}
@@ -199,69 +205,69 @@ export function ColorArchiveList({
             alt=""
             className="h-full w-full rounded-2xl object-cover shadow-2xl shadow-black/35 ring-1 ring-black/10"
             draggable={false}
-            height={PREVIEW_SIZE}
-            key={activeItem.imageUrl}
-            src={activeItem.imageUrl}
-            width={PREVIEW_SIZE}
+            height={640}
+            key={activeImageUrl}
+            src={activeImageUrl}
+            width={640}
           />
         </div>
       ) : null}
 
-      <div
-        className="relative z-10 max-h-[min(70vh,40rem)] overflow-y-auto overscroll-contain py-[18vh]"
-        ref={scrollerRef}
+      {/* Extra bottom space so the last songs can scroll into the focus band. */}
+      <ol
+        className="relative z-10 mx-auto w-full max-w-3xl pb-[55vh] pt-[12vh]"
+        ref={listRef}
       >
-        <ol className="mx-auto w-full max-w-3xl px-6 sm:px-10">
-          {items.map((item, index) => {
-            const isActive = index === activeIndex;
-            const distance = Math.abs(index - activeIndex);
-            const opacity =
-              distance === 0 ? 1 : distance === 1 ? 0.42 : distance === 2 ? 0.24 : 0.14;
+        {items.map((item, index) => {
+          const isActive = index === activeIndex;
+          const distance = Math.abs(index - activeIndex);
+          const opacity =
+            distance === 0 ? 1 : distance === 1 ? 0.42 : distance === 2 ? 0.24 : 0.14;
 
-            return (
-              <li
-                className="border-b border-black/10 last:border-b-0"
-                key={`${item.id}-${index}`}
-                ref={(node) => {
-                  rowRefs.current[index] = node;
+          return (
+            <li
+              className="border-b border-black/10 last:border-b-0"
+              key={`${item.id}-${index}`}
+              ref={(node) => {
+                rowRefs.current[index] = node;
+              }}
+            >
+              <div
+                className="flex w-full max-w-[min(100%,36rem)] cursor-pointer flex-col gap-1 py-5 text-left transition-[opacity,transform] duration-300 sm:max-w-[min(100%,40rem)]"
+                onClick={() => focusRow(index)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    focusRow(index);
+                  }
                 }}
+                role="button"
+                style={{
+                  opacity,
+                  transform: isActive ? "scale(1)" : "scale(0.985)",
+                  color: isActive ? "#0a0a0a" : "rgb(0 0 0 / 55%)",
+                }}
+                tabIndex={0}
               >
-                <div
-                  className="flex w-full cursor-pointer items-center justify-between gap-6 py-5 text-left transition-[opacity,transform] duration-300"
-                  onClick={() => {
-                    rowRefs.current[index]?.scrollIntoView({
-                      behavior: "smooth",
-                      block: "center",
-                    });
-                    setActiveIndex(index);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      rowRefs.current[index]?.scrollIntoView({
-                        behavior: "smooth",
-                        block: "center",
-                      });
-                      setActiveIndex(index);
-                    }
-                  }}
-                  role="button"
-                  style={{
-                    opacity,
-                    transform: isActive ? "scale(1)" : "scale(0.985)",
-                    color: isActive ? "#0a0a0a" : "rgb(0 0 0 / 55%)",
-                  }}
-                  tabIndex={0}
+                <span
+                  className={`truncate text-2xl font-medium tracking-tight sm:text-3xl ${
+                    isActive ? "font-semibold" : ""
+                  }`}
                 >
+                  {item.title}
+                </span>
+                {item.subtitle ? (
                   <span
-                    className={`min-w-0 flex-1 truncate text-2xl font-medium tracking-tight sm:text-3xl ${
-                      isActive ? "font-semibold" : ""
+                    className={`truncate text-sm sm:text-base ${
+                      isActive ? "text-black/70" : "text-black/45"
                     }`}
                   >
-                    {item.title}
+                    {item.subtitle}
                   </span>
+                ) : null}
+                {item.badge ? (
                   <span
-                    className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold sm:text-sm ${
+                    className={`mt-1 w-fit rounded-full px-3 py-1 text-xs font-semibold sm:text-sm ${
                       isActive
                         ? "bg-black/10 text-black"
                         : "bg-black/5 text-black/55"
@@ -269,18 +275,18 @@ export function ColorArchiveList({
                   >
                     {item.badge}
                   </span>
-                </div>
-
-                {isActive && renderActivePanel ? (
-                  <div className="pb-5 text-black/80">
-                    {renderActivePanel(item, index)}
-                  </div>
                 ) : null}
-              </li>
-            );
-          })}
-        </ol>
-      </div>
+              </div>
+
+              {isActive && renderActivePanel ? (
+                <div className="max-w-[min(100%,36rem)] pb-5 text-black/80 sm:max-w-[min(100%,40rem)]">
+                  {renderActivePanel(item, index)}
+                </div>
+              ) : null}
+            </li>
+          );
+        })}
+      </ol>
     </div>
   );
 }

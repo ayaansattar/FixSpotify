@@ -54,6 +54,7 @@ export function GenreTrackList({
       tracks.map((track) => ({
         id: track.id,
         title: track.name,
+        subtitle: track.artistNames,
         badge: statusLabel(track.status),
         imageUrl: track.imageUrl,
         colorKey: track.artistNames || track.name,
@@ -260,7 +261,6 @@ export function GenreTrackList({
 
         return (
           <div className="space-y-3">
-            <p className="text-sm text-black/70">{track.artistNames}</p>
             {track.reason ? (
               <p className="text-xs leading-5 text-black/60">{track.reason}</p>
             ) : null}

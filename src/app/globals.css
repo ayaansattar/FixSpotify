@@ -13,6 +13,8 @@
 
 html {
   scrollbar-color: rgb(255 255 255 / 18%) transparent;
+  background: var(--archive-bg, var(--background));
+  transition: background-color 420ms ease;
 }
 
 body {
@@ -21,12 +23,18 @@ body {
   background:
     radial-gradient(ellipse 80rem 34rem at 20% -6rem, rgb(30 215 96 / 14%), transparent),
     radial-gradient(ellipse 60rem 30rem at 110% 14rem, rgb(30 130 215 / 7%), transparent),
-    var(--background);
+    var(--archive-bg, var(--background));
   background-attachment: fixed;
   color: var(--foreground);
   font-family: inherit;
   -webkit-font-smoothing: antialiased;
   letter-spacing: -0.011em;
+  transition: background-color 420ms ease;
+}
+
+/* Solid full-viewport wash while a playlist archive is focused. */
+body.archive-fullscreen {
+  background: var(--archive-bg, var(--background));
 }
 
 ::selection {

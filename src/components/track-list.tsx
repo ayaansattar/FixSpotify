@@ -110,8 +110,12 @@ export function TrackList({
       visibleTracks.map((track) => ({
         id: track.id,
         title: track.name,
-        badge:
+        subtitle:
           track.artists.map((artist) => artist.name).join(", ") || "Unknown",
+        badge:
+          track.playCount === 0
+            ? "Never played"
+            : `${track.playCount} ${track.playCount === 1 ? "play" : "plays"}`,
         imageUrl: track.imageUrl,
         colorKey:
           track.artists.map((artist) => artist.name).join(", ") || track.name,
@@ -297,11 +301,6 @@ export function TrackList({
 
             return (
               <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-full bg-black/10 px-3 py-1 text-sm tabular-nums text-black/80">
-                  {track.playCount === 0
-                    ? "Never played"
-                    : `${track.playCount} ${track.playCount === 1 ? "play" : "plays"}`}
-                </span>
                 {track.isPlayable ? (
                   <button
                     className="cursor-pointer rounded-full border border-black/20 bg-black/10 px-3 py-1 text-sm font-semibold text-black hover:bg-black/15 disabled:cursor-not-allowed disabled:opacity-50"

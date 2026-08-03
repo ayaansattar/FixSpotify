@@ -33,6 +33,7 @@ export function DeletedTrackList({ initialTracks }: DeletedTrackListProps) {
       tracks.map((track) => ({
         id: track.id,
         title: track.trackName,
+        subtitle: track.artistNames || "Unknown artist",
         badge: track.playlistName,
         imageUrl: track.albumImageUrl,
         colorKey: track.artistNames || track.trackName,
@@ -119,7 +120,6 @@ export function DeletedTrackList({ initialTracks }: DeletedTrackListProps) {
           return (
             <div className="flex flex-wrap items-center gap-3">
               <span className="text-xs text-black/60">
-                {track.artistNames || "Unknown artist"} ·{" "}
                 {formatDeletedAt(track.deletedAt)}
               </span>
               <a

@@ -320,6 +320,7 @@ export function ShufflePanel({
             items={result.tracks.slice(0, 100).map((track) => ({
               id: `${track.position}-${track.id}`,
               title: track.name,
+              subtitle: track.artists,
               badge: `#${track.position}`,
               imageUrl: track.imageUrl,
               colorKey: track.artists || track.name,
@@ -335,14 +336,12 @@ export function ShufflePanel({
 
               return (
                 <div className="flex flex-wrap items-center gap-3">
-                  <span className="text-sm text-black/70">
-                    {track.artists}
-                    {typeof track.playCount === "number"
-                      ? ` · ${track.playCount} lifetime ${
-                          track.playCount === 1 ? "play" : "plays"
-                        }`
-                      : ""}
-                  </span>
+                  {typeof track.playCount === "number" ? (
+                    <span className="text-sm text-black/70">
+                      {track.playCount} lifetime{" "}
+                      {track.playCount === 1 ? "play" : "plays"}
+                    </span>
+                  ) : null}
                   <a
                     className="rounded-full border border-black/15 px-3 py-1 text-sm text-black/70 hover:bg-black/10 hover:text-black"
                     href={`https://open.spotify.com/track/${track.id}`}

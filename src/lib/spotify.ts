@@ -381,13 +381,14 @@ export async function addSpotifyPlaylistItem(
   );
 }
 
-/** Prefer ~64px album art for list thumbnails; fall back to any available size. */
+/** Prefer album art near `minHeight` (default 300) for sharp previews. */
 export function pickAlbumImageUrl(
   images?: Array<{
     url?: string;
     height?: number | null;
     width?: number | null;
   }> | null,
+  minHeight = 300,
 ): string | null {
   if (!images?.length) {
     return null;
@@ -403,9 +404,27 @@ export function pickAlbumImageUrl(
   }
 
   const sorted = [...withUrl].sort(
-    (a, b) => (a.height ?? Number.POSITIVE_INFINITY) - (b.height ?? Number.POSITIVE_INFINITY),
+    (a, b) => (a.height ?? 0) - (b.height ?? 0),
   );
-  const preferred = sorted.find((image) => (image.height ?? 0) >= 64);
+  const preferred = sorted.find((image) => (image.height ?? 0) >= minHeight);
 
+  // Prefer the largest available when nothing meets the target size.
   return preferred?.url ?? sorted[sorted.length - 1]?.url ?? null;
+}
+
+/**
+ * Best-effort upgrade of a Spotify CDN thumbnail to a larger variant.
+ * Useful for entries cached before we started storing 300px+ art.
+ */
+export function upgradeAlbumImageUrl(
+  url: string | null | undefined,
+): string | null {
+  if (!url) {
+    return null;
+  }
+
+  // Spotify image IDs encode size: 4851 ≈ 64px, 01e02 ≈ 300px, 0b273 ≈ 640px.
+  return url
+    .replace("ab67616d00004851", "ab67616d0000b273")
+    .replace("ab67616d00001e02", "ab67616d0000b273");
 }
