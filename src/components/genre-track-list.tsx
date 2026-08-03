@@ -1,9 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-import { AlbumCover } from "@/components/album-cover";
+import { ColorArchiveList } from "@/components/color-archive-list";
 
 type MatchStatus = "match" | "no-match" | "pending";
 
@@ -48,6 +48,18 @@ export function GenreTrackList({
     setNoteOpenId(null);
     setPendingId(null);
   }, [initialTracks]);
+
+  const archiveItems = useMemo(
+    () =>
+      tracks.map((track) => ({
+        id: track.id,
+        title: track.name,
+        badge: statusLabel(track.status),
+        imageUrl: track.imageUrl,
+        colorKey: track.artistNames || track.name,
+      })),
+    [tracks],
+  );
 
   async function addToSuggestedPlaylist(track: GenreTrackListItem) {
     if (!track.suggestion) {
@@ -225,111 +237,94 @@ export function GenreTrackList({
     }
   }
 
+  if (tracks.length === 0) {
+    return (
+      <p className="mt-5 rounded-2xl border border-white/10 p-6 text-[#a7b0aa]">
+        No tracks to show for this playlist.
+      </p>
+    );
+  }
+
   return (
-    <ul className="mt-5 space-y-3">
-      {tracks.map((track) => {
+    <ColorArchiveList
+      items={archiveItems}
+      renderActivePanel={(item) => {
+        const track = tracks.find((candidate) => candidate.id === item.id);
+        if (!track) {
+          return null;
+        }
+
         const pending = pendingId === track.id;
         const added = Boolean(addedIds[track.id]);
         const noteOpen = noteOpenId === track.id;
 
         return (
-          <li
-            className="rounded-2xl border border-white/5 bg-white/5 px-5 py-4"
-            key={track.id}
-          >
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="flex min-w-0 flex-1 items-center gap-3">
-                <AlbumCover url={track.imageUrl} />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium">{track.name}</p>
-                  <p className="truncate text-sm text-[#a7b0aa]">
-                    {track.artistNames}
-                  </p>
-                  {track.reason ? (
-                    <p className="mt-1 text-xs leading-5 text-[#69736d]">
-                      {track.reason}
-                    </p>
-                  ) : null}
-                  {track.note ? (
-                    <p className="mt-1 text-xs leading-5 text-[#8cf0ae]">
-                      Your note: {track.note}
-                    </p>
-                  ) : null}
-                </div>
-              </div>
+          <div className="space-y-3">
+            <p className="text-sm text-black/70">{track.artistNames}</p>
+            {track.reason ? (
+              <p className="text-xs leading-5 text-black/60">{track.reason}</p>
+            ) : null}
+            {track.note ? (
+              <p className="text-xs leading-5 text-black/75">
+                Your note: {track.note}
+              </p>
+            ) : null}
 
-              <div className="flex min-w-40 flex-col items-end gap-1.5">
-                <StatusBadge status={track.status} />
-
-                {track.suggestion ? (
-                  <>
-                    <p className="text-xs text-[#a7b0aa]">
-                      Fits{" "}
-                      <span className="font-semibold text-white">
-                        {track.suggestion.playlistName}
-                      </span>
-                    </p>
-                    {added ? (
-                      <button
-                        className="cursor-pointer rounded-full border border-red-300/30 bg-red-300/10 px-3 py-1.5 text-xs font-semibold text-red-200 transition hover:bg-red-300/20 disabled:cursor-not-allowed disabled:opacity-60"
-                        disabled={pending}
-                        onClick={() => void removeFromCurrentPlaylist(track)}
-                        type="button"
-                      >
-                        {pending
-                          ? "Removing…"
-                          : `Remove from ${playlistName}`}
-                      </button>
-                    ) : (
-                      <button
-                        className="cursor-pointer rounded-full border border-[#1ed760]/30 bg-[#1ed760]/10 px-3 py-1.5 text-xs font-semibold text-[#1ed760] transition hover:bg-[#1ed760]/20 disabled:cursor-not-allowed disabled:opacity-60"
-                        disabled={pending}
-                        onClick={() => void addToSuggestedPlaylist(track)}
-                        type="button"
-                      >
-                        {pending
-                          ? "Adding…"
-                          : `Add to ${track.suggestion.playlistName}`}
-                      </button>
-                    )}
-                  </>
-                ) : null}
-
-                <button
-                  className="cursor-pointer text-xs text-[#a7b0aa] hover:text-white disabled:opacity-60"
-                  disabled={pending}
-                  onClick={() => {
-                    setNoteOpenId(noteOpen ? null : track.id);
-                    setNoteDrafts((current) => ({
-                      ...current,
-                      [track.id]: current[track.id] ?? track.note ?? "",
-                    }));
-                  }}
-                  type="button"
-                >
-                  {track.note ? "Edit keep reason" : "Keep here because…"}
-                </button>
-
-                {errors[track.id] ? (
-                  <p
-                    aria-live="polite"
-                    className="max-w-xs text-right text-xs text-red-300"
+            <div className="flex flex-wrap items-center gap-2">
+              {track.suggestion ? (
+                added ? (
+                  <button
+                    className="cursor-pointer rounded-full border border-red-900/30 bg-red-900/10 px-3 py-1.5 text-xs font-semibold text-red-950 hover:bg-red-900/15 disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={pending}
+                    onClick={() => void removeFromCurrentPlaylist(track)}
+                    type="button"
                   >
-                    {errors[track.id]}
-                  </p>
-                ) : null}
-              </div>
+                    {pending ? "Removing…" : `Remove from ${playlistName}`}
+                  </button>
+                ) : (
+                  <button
+                    className="cursor-pointer rounded-full border border-black/20 bg-black/10 px-3 py-1.5 text-xs font-semibold text-black hover:bg-black/15 disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={pending}
+                    onClick={() => void addToSuggestedPlaylist(track)}
+                    type="button"
+                  >
+                    {pending
+                      ? "Adding…"
+                      : `Add to ${track.suggestion.playlistName}`}
+                  </button>
+                )
+              ) : null}
+
+              <button
+                className="cursor-pointer rounded-full border border-black/15 px-3 py-1.5 text-xs text-black/70 hover:bg-black/10 hover:text-black disabled:opacity-60"
+                disabled={pending}
+                onClick={() => {
+                  setNoteOpenId(noteOpen ? null : track.id);
+                  setNoteDrafts((current) => ({
+                    ...current,
+                    [track.id]: current[track.id] ?? track.note ?? "",
+                  }));
+                }}
+                type="button"
+              >
+                {track.note ? "Edit keep reason" : "Keep here because…"}
+              </button>
             </div>
 
+            {errors[track.id] ? (
+              <p aria-live="polite" className="text-xs text-red-900">
+                {errors[track.id]}
+              </p>
+            ) : null}
+
             {noteOpen ? (
-              <div className="mt-3 border-t border-white/10 pt-3">
-                <p className="mb-2 text-xs text-[#a7b0aa]">
-                  Teach the model why this song belongs in this playlist even
-                  if it looks like a misfit. This note overrides AI for this
-                  track.
+              <div className="rounded-2xl border border-black/10 bg-black/5 p-3">
+                <p className="mb-2 text-xs text-black/65">
+                  Teach the model why this song belongs in this playlist even if
+                  it looks like a misfit. This note overrides AI for this track.
                 </p>
                 <textarea
-                  className="min-h-20 w-full rounded-xl border border-white/15 bg-[#111713] px-3 py-2 text-sm text-white placeholder:text-[#69736d]"
+                  className="min-h-20 w-full rounded-xl border border-black/15 bg-white/70 px-3 py-2 text-sm text-black placeholder:text-black/40"
                   onChange={(event) => {
                     const value = event.target.value;
                     setNoteDrafts((current) => ({
@@ -337,12 +332,12 @@ export function GenreTrackList({
                       [track.id]: value,
                     }));
                   }}
-                  placeholder="e.g. Personal exception — I keep this soundtrack cut with my Indian playlist because…"
+                  placeholder="e.g. Personal exception — I keep this soundtrack cut here because…"
                   value={noteDrafts[track.id] ?? ""}
                 />
                 <div className="mt-2 flex flex-wrap gap-2">
                   <button
-                    className="cursor-pointer rounded-full bg-[#1ed760] px-3 py-1.5 text-xs font-semibold text-[#07150c] disabled:opacity-60"
+                    className="cursor-pointer rounded-full bg-black px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
                     disabled={pending}
                     onClick={() => void saveNote(track)}
                     type="button"
@@ -351,7 +346,7 @@ export function GenreTrackList({
                   </button>
                   {track.note ? (
                     <button
-                      className="cursor-pointer rounded-full border border-white/15 px-3 py-1.5 text-xs text-red-300 disabled:opacity-60"
+                      className="cursor-pointer rounded-full border border-black/15 px-3 py-1.5 text-xs text-red-900 disabled:opacity-60"
                       disabled={pending}
                       onClick={() => void clearNote(track)}
                       type="button"
@@ -362,33 +357,19 @@ export function GenreTrackList({
                 </div>
               </div>
             ) : null}
-          </li>
+          </div>
         );
-      })}
-    </ul>
+      }}
+    />
   );
 }
 
-function StatusBadge({ status }: { status: MatchStatus }) {
+function statusLabel(status: MatchStatus) {
   if (status === "match") {
-    return (
-      <span className="rounded-full border border-[#1ed760]/30 bg-[#1ed760]/10 px-3 py-1 text-xs font-semibold text-[#1ed760]">
-        Belongs
-      </span>
-    );
+    return "Belongs";
   }
-
   if (status === "no-match") {
-    return (
-      <span className="rounded-full border border-amber-300/30 bg-amber-300/10 px-3 py-1 text-xs font-semibold text-amber-200">
-        Possible misfit
-      </span>
-    );
+    return "Possible misfit";
   }
-
-  return (
-    <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs font-semibold text-[#a7b0aa]">
-      Needs AI
-    </span>
-  );
+  return "Needs AI";
 }

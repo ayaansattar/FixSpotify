@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-import { AlbumCover } from "@/components/album-cover";
+import { ColorArchiveList } from "@/components/color-archive-list";
 import { Dropdown } from "@/components/dropdown";
 
 type RankedTrack = {
@@ -104,6 +104,20 @@ export function TrackList({
 
     return matchesFilter && matchesSearch;
   });
+
+  const archiveItems = useMemo(
+    () =>
+      visibleTracks.map((track) => ({
+        id: track.id,
+        title: track.name,
+        badge:
+          track.artists.map((artist) => artist.name).join(", ") || "Unknown",
+        imageUrl: track.imageUrl,
+        colorKey:
+          track.artists.map((artist) => artist.name).join(", ") || track.name,
+      })),
+    [visibleTracks],
+  );
 
   async function play(track: RankedTrack) {
     if (!track.isPlayable) {
@@ -270,44 +284,27 @@ export function TrackList({
           No tracks match your search and filter.
         </p>
       ) : (
-      <ol className="mt-4 overflow-hidden rounded-2xl border border-white/10">
-        {visibleTracks.map((track, index) => {
-          const pending = pendingTrackId === track.id;
+        <ColorArchiveList
+          items={archiveItems}
+          renderActivePanel={(item) => {
+            const track = visibleTracks.find(
+              (candidate) => candidate.id === item.id,
+            );
+            if (!track) {
+              return null;
+            }
+            const pending = pendingTrackId === track.id;
 
-          return (
-            <li
-              className={`grid grid-cols-[2.5rem_2.5rem_minmax(0,1fr)_auto] items-center gap-3 border-b border-white/10 px-4 py-4 transition-colors last:border-b-0 ${
-                track.isPlayable
-                  ? "hover:bg-white/[0.03]"
-                  : "bg-red-300/[0.025]"
-              }`}
-              key={track.id}
-            >
-              <span className="text-sm tabular-nums text-[#69736d]">
-                {index + 1}
-              </span>
-              <AlbumCover url={track.imageUrl} />
-              <div className="min-w-0">
-                <p className="truncate font-medium">{track.name}</p>
-                <p className="truncate text-sm text-[#a7b0aa]">
-                  {track.artists.map((artist) => artist.name).join(", ")}
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center justify-end gap-2">
-                <span
-                  className={`rounded-full px-3 py-1 text-sm tabular-nums ${
-                    track.playCount === 0
-                      ? "border border-amber-300/25 bg-amber-300/10 text-amber-200"
-                      : "bg-white/10"
-                  }`}
-                >
+            return (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-black/10 px-3 py-1 text-sm tabular-nums text-black/80">
                   {track.playCount === 0
                     ? "Never played"
                     : `${track.playCount} ${track.playCount === 1 ? "play" : "plays"}`}
                 </span>
                 {track.isPlayable ? (
                   <button
-                    className="cursor-pointer rounded-full border border-[#1ed760]/30 px-3 py-1 text-sm text-[#1ed760] hover:bg-[#1ed760]/10 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="cursor-pointer rounded-full border border-black/20 bg-black/10 px-3 py-1 text-sm font-semibold text-black hover:bg-black/15 disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={pending}
                     onClick={() => void play(track)}
                     type="button"
@@ -320,7 +317,7 @@ export function TrackList({
                   </button>
                 ) : (
                   <span
-                    className="rounded-full border border-red-300/25 bg-red-300/10 px-3 py-1 text-sm text-red-200"
+                    className="rounded-full border border-red-900/30 bg-red-900/10 px-3 py-1 text-sm text-red-950"
                     title={
                       track.availabilityReason
                         ? `Spotify restriction: ${track.availabilityReason}`
@@ -331,7 +328,7 @@ export function TrackList({
                   </span>
                 )}
                 <a
-                  className="rounded-full border border-white/15 px-3 py-1 text-sm text-[#a7b0aa] hover:bg-white/10 hover:text-white"
+                  className="rounded-full border border-black/15 px-3 py-1 text-sm text-black/70 hover:bg-black/10 hover:text-black"
                   href={`https://open.spotify.com/track/${track.id}`}
                   rel="noreferrer"
                   target="_blank"
@@ -339,7 +336,7 @@ export function TrackList({
                   Open
                 </a>
                 <button
-                  className="cursor-pointer rounded-full px-3 py-1 text-sm text-red-300 hover:bg-red-300/10 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="cursor-pointer rounded-full px-3 py-1 text-sm text-red-900 hover:bg-red-900/10 disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={pending}
                   onClick={() => void remove(track)}
                   type="button"
@@ -347,10 +344,9 @@ export function TrackList({
                   Remove
                 </button>
               </div>
-            </li>
-          );
-        })}
-      </ol>
+            );
+          }}
+        />
       )}
     </>
   );

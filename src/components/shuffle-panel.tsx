@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 
-import { AlbumCover } from "@/components/album-cover";
+import { ColorArchiveList } from "@/components/color-archive-list";
 import { Dropdown } from "@/components/dropdown";
 
 type PlaylistOption = {
@@ -316,38 +316,45 @@ export function ShufflePanel({
             ) : null}
           </div>
 
-          <ol className="overflow-hidden rounded-2xl border border-white/10">
-            {result.tracks.slice(0, 100).map((track) => (
-              <li
-                className="grid grid-cols-[2.5rem_2.5rem_minmax(0,1fr)_auto] items-center gap-3 border-b border-white/10 px-4 py-3 last:border-b-0"
-                key={`${track.position}-${track.id}`}
-              >
-                <span className="text-sm tabular-nums text-[#69736d]">
-                  {track.position}
-                </span>
-                <AlbumCover url={track.imageUrl} />
-                <div className="min-w-0">
-                  <p className="truncate font-medium">{track.name}</p>
-                  <p className="truncate text-sm text-[#a7b0aa]">
+          <ColorArchiveList
+            items={result.tracks.slice(0, 100).map((track) => ({
+              id: `${track.position}-${track.id}`,
+              title: track.name,
+              badge: `#${track.position}`,
+              imageUrl: track.imageUrl,
+              colorKey: track.artists || track.name,
+            }))}
+            renderActivePanel={(item) => {
+              const track = result.tracks.find(
+                (candidate) =>
+                  `${candidate.position}-${candidate.id}` === item.id,
+              );
+              if (!track) {
+                return null;
+              }
+
+              return (
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="text-sm text-black/70">
                     {track.artists}
                     {typeof track.playCount === "number"
                       ? ` · ${track.playCount} lifetime ${
                           track.playCount === 1 ? "play" : "plays"
                         }`
                       : ""}
-                  </p>
+                  </span>
+                  <a
+                    className="rounded-full border border-black/15 px-3 py-1 text-sm text-black/70 hover:bg-black/10 hover:text-black"
+                    href={`https://open.spotify.com/track/${track.id}`}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    Open
+                  </a>
                 </div>
-                <a
-                  className="text-sm text-[#a7b0aa] hover:text-white"
-                  href={`https://open.spotify.com/track/${track.id}`}
-                  rel="noreferrer"
-                  target="_blank"
-                >
-                  Open
-                </a>
-              </li>
-            ))}
-          </ol>
+              );
+            }}
+          />
 
           {result.mode !== "deck" && result.tracks.length > 100 ? (
             <p className="text-sm text-[#69736d]">

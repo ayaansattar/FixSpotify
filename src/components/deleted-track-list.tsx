@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
-import { AlbumCover } from "@/components/album-cover";
+import { ColorArchiveList } from "@/components/color-archive-list";
 
 type DeletedTrack = {
   id: string;
@@ -27,6 +27,18 @@ export function DeletedTrackList({ initialTracks }: DeletedTrackListProps) {
   const [tracks, setTracks] = useState(initialTracks);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
+
+  const archiveItems = useMemo(
+    () =>
+      tracks.map((track) => ({
+        id: track.id,
+        title: track.trackName,
+        badge: track.playlistName,
+        imageUrl: track.albumImageUrl,
+        colorKey: track.artistNames || track.trackName,
+      })),
+    [tracks],
+  );
 
   async function restore(track: DeletedTrack) {
     setPendingId(track.id);
@@ -95,50 +107,41 @@ export function DeletedTrackList({ initialTracks }: DeletedTrackListProps) {
         </p>
       ) : null}
 
-      <ol className="overflow-hidden rounded-2xl border border-white/10">
-        {tracks.map((track, index) => {
+      <ColorArchiveList
+        items={archiveItems}
+        renderActivePanel={(item) => {
+          const track = tracks.find((candidate) => candidate.id === item.id);
+          if (!track) {
+            return null;
+          }
           const pending = pendingId === track.id;
 
           return (
-            <li
-              className="grid grid-cols-[2.5rem_2.5rem_minmax(0,1fr)_auto] items-center gap-3 border-b border-white/10 px-4 py-4 transition-colors last:border-b-0 hover:bg-white/[0.03]"
-              key={track.id}
-            >
-              <span className="text-sm tabular-nums text-[#69736d]">
-                {index + 1}
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-xs text-black/60">
+                {track.artistNames || "Unknown artist"} ·{" "}
+                {formatDeletedAt(track.deletedAt)}
               </span>
-              <AlbumCover url={track.albumImageUrl} />
-              <div className="min-w-0">
-                <p className="truncate font-medium">{track.trackName}</p>
-                <p className="truncate text-sm text-[#a7b0aa]">
-                  {track.artistNames || "Unknown artist"} · {track.playlistName}
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center justify-end gap-3">
-                <span className="text-xs text-[#69736d]">
-                  {formatDeletedAt(track.deletedAt)}
-                </span>
-                <a
-                  className="text-sm text-[#a7b0aa] hover:text-white"
-                  href={`https://open.spotify.com/track/${track.trackId}`}
-                  rel="noreferrer"
-                  target="_blank"
-                >
-                  Open
-                </a>
-                <button
-                  className="cursor-pointer rounded-full border border-[#1ed760]/40 px-3 py-1 text-sm text-[#8cf0ae] hover:bg-[#1ed760]/10 disabled:cursor-not-allowed disabled:opacity-50"
-                  disabled={pending}
-                  onClick={() => void restore(track)}
-                  type="button"
-                >
-                  {pending ? "Restoring…" : "Restore"}
-                </button>
-              </div>
-            </li>
+              <a
+                className="rounded-full border border-black/15 px-3 py-1 text-sm text-black/70 hover:bg-black/10 hover:text-black"
+                href={`https://open.spotify.com/track/${track.trackId}`}
+                rel="noreferrer"
+                target="_blank"
+              >
+                Open
+              </a>
+              <button
+                className="cursor-pointer rounded-full border border-black/20 bg-black/10 px-3 py-1 text-sm font-semibold text-black hover:bg-black/15 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={pending}
+                onClick={() => void restore(track)}
+                type="button"
+              >
+                {pending ? "Restoring…" : "Restore"}
+              </button>
+            </div>
           );
-        })}
-      </ol>
+        }}
+      />
     </>
   );
 }
