@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { signIn, signOut, useSession } from "next-auth/react";
 
 const links = [
   { href: "/dashboard", label: "Least listened" },
@@ -13,6 +14,9 @@ const links = [
 
 export function SiteHeader() {
   const pathname = usePathname();
+  const { data: session } = useSession();
+  const isSignedIn = Boolean(session?.user);
+  const isHome = pathname === "/";
 
   if (pathname === "/signin") {
     return null;
@@ -20,7 +24,13 @@ export function SiteHeader() {
 
   return (
     <header className="pointer-events-none sticky top-4 z-50 px-4 sm:px-6">
-      <div className="pointer-events-auto mx-auto flex w-full max-w-5xl items-center gap-2 overflow-x-auto rounded-2xl border border-white/10 bg-[#0d120f]/80 px-4 py-2.5 shadow-lg shadow-black/30 backdrop-blur-md">
+      <div
+        className={`pointer-events-auto mx-auto flex w-full items-center gap-2 overflow-x-auto rounded-2xl border px-4 py-2.5 shadow-lg shadow-black/30 backdrop-blur-md ${
+          isHome
+            ? "max-w-6xl border-white/10 bg-black/55"
+            : "max-w-5xl border-white/10 bg-[#0d120f]/80"
+        }`}
+      >
         <Link
           className="mr-2 flex shrink-0 items-center gap-2.5 text-xl font-bold tracking-tight text-white"
           href="/"
@@ -38,24 +48,43 @@ export function SiteHeader() {
         </Link>
 
         <nav className="ml-auto flex items-center gap-1 text-sm">
-          {links.map((link) => {
-            const isActive =
-              pathname === link.href || pathname.startsWith(`${link.href}/`);
+          {isSignedIn
+            ? links.map((link) => {
+                const isActive =
+                  pathname === link.href ||
+                  pathname.startsWith(`${link.href}/`);
 
-            return (
-              <Link
-                className={`shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 transition-colors ${
-                  isActive
-                    ? "bg-[#1ed760]/15 font-medium text-[#1ed760]"
-                    : "text-[#a7b0aa] hover:bg-white/5 hover:text-white"
-                }`}
-                href={link.href}
-                key={link.href}
-              >
-                {link.label}
-              </Link>
-            );
-          })}
+                return (
+                  <Link
+                    className={`shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 transition-colors ${
+                      isActive
+                        ? "bg-[#1ed760]/15 font-medium text-[#1ed760]"
+                        : "text-[#a7b0aa] hover:bg-white/5 hover:text-white"
+                    }`}
+                    href={link.href}
+                    key={link.href}
+                  >
+                    {link.label}
+                  </Link>
+                );
+              })
+            : null}
+
+          {isHome ? (
+            <button
+              className={`ml-1 shrink-0 cursor-pointer rounded-full px-3 py-1.5 text-sm font-medium transition-colors ${
+                isSignedIn
+                  ? "text-[#a7b0aa] hover:bg-white/5 hover:text-white"
+                  : "bg-[#1ed760] text-[#07150c] hover:opacity-90"
+              }`}
+              onClick={() =>
+                isSignedIn ? void signOut() : void signIn("spotify")
+              }
+              type="button"
+            >
+              {isSignedIn ? "Sign out" : "Connect Spotify"}
+            </button>
+          ) : null}
         </nav>
       </div>
     </header>
