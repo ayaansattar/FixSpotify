@@ -65,7 +65,7 @@ function InsightsShell({ children }: { children: React.ReactNode }) {
         <h1 className="text-3xl font-bold tracking-tight">Insights</h1>
         <p className="mt-2 max-w-2xl text-sm text-[#a7b0aa]">
           Live charts from your listening history and preferred playlists —
-          most/least played songs and artists, plus listening over time.
+          song/artist ranks, listening over time, and playlist health.
         </p>
       </header>
       {children}

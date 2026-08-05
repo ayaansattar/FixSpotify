@@ -8,6 +8,9 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  ComposedChart,
+  Legend,
+  Line,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -21,6 +24,9 @@ import type {
 } from "@/lib/insights";
 
 const CHART_GREEN = "#1ed760";
+const CHART_AMBER = "#e6b422";
+const CHART_RED = "#e25555";
+const CHART_BLUE = "#5b9fd4";
 const CHART_TICK = "#d7ddd9";
 const CHART_GRID = "rgba(255,255,255,0.08)";
 const TOOLTIP_STYLE = {
@@ -37,6 +43,12 @@ const AXIS_TICK_SMALL = { fill: CHART_TICK, fontSize: 11 };
 function truncateLabel(value: string, max = 18) {
   if (value.length <= max) return value;
   return `${value.slice(0, max - 1)}…`;
+}
+
+function healthFill(score: number) {
+  if (score >= 70) return CHART_GREEN;
+  if (score >= 40) return CHART_AMBER;
+  return CHART_RED;
 }
 
 const TIME_RANGES: Array<{ value: PlaysOverTimeRange; label: string }> = [
@@ -62,6 +74,8 @@ export function InsightsCharts({ data }: InsightsChartsProps) {
   const playsOverTime = data.playsOverTime[timeRange];
   const tracks = data.tracksByPlays[trackRank];
   const artists = data.artistsByPlays[artistRank];
+  const playlistHealth = data.playlistHealth;
+  const playlistChartHeight = Math.max(240, playlistHealth.length * 32);
 
   const timeDescription = useMemo(() => {
     if (timeRange === "month") {
@@ -82,7 +96,7 @@ export function InsightsCharts({ data }: InsightsChartsProps) {
 
   return (
     <div className="space-y-8">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <StatCard
           label="Plays logged"
           value={data.summary.totalPlays.toLocaleString()}
@@ -98,6 +112,10 @@ export function InsightsCharts({ data }: InsightsChartsProps) {
         <StatCard
           label="Unavailable tracks"
           value={data.summary.unplayable.toLocaleString()}
+        />
+        <StatCard
+          label="Avg playlist health"
+          value={`${data.summary.avgPlaylistHealth}/100`}
         />
       </div>
 
@@ -305,6 +323,364 @@ export function InsightsCharts({ data }: InsightsChartsProps) {
             </AreaChart>
           </ResponsiveContainer>
         )}
+      </ChartCard>
+
+      <ChartCard
+        description="0–100 score from play coverage, freshness (last 90 days), balance, volume, and availability."
+        title="Playlist health score"
+      >
+        {playlistHealth.length === 0 ? (
+          <p className="py-16 text-center text-sm text-[#a7b0aa]">
+            No preferred playlists to score.
+          </p>
+        ) : (
+          <ResponsiveContainer height={playlistChartHeight} width="100%">
+            <BarChart
+              data={playlistHealth}
+              layout="vertical"
+              margin={{ left: 8, right: 16, top: 4, bottom: 4 }}
+            >
+              <CartesianGrid stroke={CHART_GRID} horizontal={false} />
+              <XAxis
+                type="number"
+                domain={[0, 100]}
+                tick={AXIS_TICK}
+                tickLine={false}
+                axisLine={false}
+              />
+              <YAxis
+                type="category"
+                dataKey="playlist"
+                width={128}
+                interval={0}
+                tick={AXIS_TICK_SMALL}
+                tickFormatter={(value) => truncateLabel(String(value))}
+                tickLine={false}
+                axisLine={false}
+              />
+              <Tooltip
+                contentStyle={TOOLTIP_STYLE}
+                labelStyle={TOOLTIP_LABEL_STYLE}
+                itemStyle={TOOLTIP_ITEM_STYLE}
+                cursor={{ fill: "rgba(30,215,96,0.08)" }}
+                formatter={(value, _name, item) => {
+                  const row =
+                    item &&
+                    typeof item === "object" &&
+                    "payload" in item &&
+                    item.payload &&
+                    typeof item.payload === "object"
+                      ? (item.payload as {
+                          avgPlays?: number;
+                          neverPlayedPct?: number;
+                          stalePct?: number;
+                          concentration?: number;
+                        })
+                      : null;
+                  const detail = row
+                    ? ` · avg ${row.avgPlays ?? 0} · ${row.neverPlayedPct ?? 0}% never · ${row.stalePct ?? 0}% stale · ${row.concentration ?? 0}% top-heavy`
+                    : "";
+                  return [
+                    typeof value === "number"
+                      ? `${value}/100${detail}`
+                      : value,
+                    "Health",
+                  ];
+                }}
+              />
+              <Bar dataKey="healthScore" radius={[0, 8, 8, 0]}>
+                {playlistHealth.map((row) => (
+                  <Cell
+                    fill={healthFill(row.healthScore)}
+                    key={row.playlistId}
+                  />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+      </ChartCard>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <ChartCard
+          description="Share of tracks in each playlist that have never logged a play."
+          title="Never-played tracks"
+        >
+          <ResponsiveContainer height={playlistChartHeight} width="100%">
+            <BarChart
+              data={playlistHealth}
+              layout="vertical"
+              margin={{ left: 8, right: 12, top: 4, bottom: 4 }}
+            >
+              <CartesianGrid stroke={CHART_GRID} horizontal={false} />
+              <XAxis
+                type="number"
+                domain={[0, 100]}
+                unit="%"
+                tick={AXIS_TICK}
+                tickLine={false}
+                axisLine={false}
+              />
+              <YAxis
+                type="category"
+                dataKey="playlist"
+                width={118}
+                interval={0}
+                tick={AXIS_TICK_SMALL}
+                tickFormatter={(value) => truncateLabel(String(value), 16)}
+                tickLine={false}
+                axisLine={false}
+              />
+              <Tooltip
+                contentStyle={TOOLTIP_STYLE}
+                labelStyle={TOOLTIP_LABEL_STYLE}
+                itemStyle={TOOLTIP_ITEM_STYLE}
+                cursor={{ fill: "rgba(226,85,85,0.08)" }}
+                formatter={(value, _name, item) => {
+                  const count =
+                    item &&
+                    typeof item === "object" &&
+                    "payload" in item &&
+                    item.payload &&
+                    typeof item.payload === "object" &&
+                    "neverPlayed" in item.payload
+                      ? Number(item.payload.neverPlayed)
+                      : null;
+                  return [
+                    typeof value === "number"
+                      ? `${value}%${count !== null ? ` · ${count} tracks` : ""}`
+                      : value,
+                    "Never played",
+                  ];
+                }}
+              />
+              <Bar dataKey="neverPlayedPct" fill={CHART_RED} radius={[0, 8, 8, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+
+        <ChartCard
+          description="Tracks with no plays in the last 90 days (includes never played)."
+          title="Stale tracks"
+        >
+          <ResponsiveContainer height={playlistChartHeight} width="100%">
+            <BarChart
+              data={playlistHealth}
+              layout="vertical"
+              margin={{ left: 8, right: 12, top: 4, bottom: 4 }}
+            >
+              <CartesianGrid stroke={CHART_GRID} horizontal={false} />
+              <XAxis
+                type="number"
+                domain={[0, 100]}
+                unit="%"
+                tick={AXIS_TICK}
+                tickLine={false}
+                axisLine={false}
+              />
+              <YAxis
+                type="category"
+                dataKey="playlist"
+                width={118}
+                interval={0}
+                tick={AXIS_TICK_SMALL}
+                tickFormatter={(value) => truncateLabel(String(value), 16)}
+                tickLine={false}
+                axisLine={false}
+              />
+              <Tooltip
+                contentStyle={TOOLTIP_STYLE}
+                labelStyle={TOOLTIP_LABEL_STYLE}
+                itemStyle={TOOLTIP_ITEM_STYLE}
+                cursor={{ fill: "rgba(230,180,34,0.08)" }}
+                formatter={(value, _name, item) => {
+                  const count =
+                    item &&
+                    typeof item === "object" &&
+                    "payload" in item &&
+                    item.payload &&
+                    typeof item.payload === "object" &&
+                    "stale" in item.payload
+                      ? Number(item.payload.stale)
+                      : null;
+                  return [
+                    typeof value === "number"
+                      ? `${value}%${count !== null ? ` · ${count} tracks` : ""}`
+                      : value,
+                    "Stale",
+                  ];
+                }}
+              />
+              <Bar dataKey="stalePct" fill={CHART_AMBER} radius={[0, 8, 8, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <ChartCard
+          description="Playlist size (bars) against lifetime play volume (line)."
+          title="Size vs plays"
+        >
+          <ResponsiveContainer
+            height={Math.max(280, playlistHealth.length * 18)}
+            width="100%"
+          >
+            <ComposedChart
+              data={playlistHealth}
+              margin={{ left: 4, right: 8, top: 8, bottom: 48 }}
+            >
+              <CartesianGrid stroke={CHART_GRID} vertical={false} />
+              <XAxis
+                dataKey="playlist"
+                interval={0}
+                angle={-32}
+                textAnchor="end"
+                height={70}
+                tick={AXIS_TICK_SMALL}
+                tickFormatter={(value) => truncateLabel(String(value), 12)}
+                tickLine={false}
+                axisLine={false}
+              />
+              <YAxis
+                yAxisId="left"
+                allowDecimals={false}
+                tick={AXIS_TICK}
+                tickLine={false}
+                axisLine={false}
+                width={40}
+              />
+              <YAxis
+                yAxisId="right"
+                orientation="right"
+                allowDecimals={false}
+                tick={AXIS_TICK}
+                tickLine={false}
+                axisLine={false}
+                width={44}
+              />
+              <Tooltip
+                contentStyle={TOOLTIP_STYLE}
+                labelStyle={TOOLTIP_LABEL_STYLE}
+                itemStyle={TOOLTIP_ITEM_STYLE}
+              />
+              <Legend wrapperStyle={{ color: CHART_TICK }} />
+              <Bar
+                yAxisId="left"
+                dataKey="trackCount"
+                name="Tracks"
+                fill={CHART_BLUE}
+                radius={[6, 6, 0, 0]}
+              />
+              <Line
+                yAxisId="right"
+                type="monotone"
+                dataKey="totalPlays"
+                name="Plays"
+                stroke={CHART_GREEN}
+                strokeWidth={2}
+                dot={{ r: 3, fill: CHART_GREEN }}
+              />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </ChartCard>
+
+        <ChartCard
+          description="How much of each playlist’s plays come from the top 20% of its tracks. Lower is healthier."
+          title="Play concentration"
+        >
+          <ResponsiveContainer height={playlistChartHeight} width="100%">
+            <BarChart
+              data={playlistHealth}
+              layout="vertical"
+              margin={{ left: 8, right: 12, top: 4, bottom: 4 }}
+            >
+              <CartesianGrid stroke={CHART_GRID} horizontal={false} />
+              <XAxis
+                type="number"
+                domain={[0, 100]}
+                unit="%"
+                tick={AXIS_TICK}
+                tickLine={false}
+                axisLine={false}
+              />
+              <YAxis
+                type="category"
+                dataKey="playlist"
+                width={118}
+                interval={0}
+                tick={AXIS_TICK_SMALL}
+                tickFormatter={(value) => truncateLabel(String(value), 16)}
+                tickLine={false}
+                axisLine={false}
+              />
+              <Tooltip
+                contentStyle={TOOLTIP_STYLE}
+                labelStyle={TOOLTIP_LABEL_STYLE}
+                itemStyle={TOOLTIP_ITEM_STYLE}
+                cursor={{ fill: "rgba(91,159,212,0.08)" }}
+                formatter={(value) => [
+                  typeof value === "number" ? `${value}% from top 20%` : value,
+                  "Concentration",
+                ]}
+              />
+              <Bar
+                dataKey="concentration"
+                fill={CHART_BLUE}
+                radius={[0, 8, 8, 0]}
+              />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+      </div>
+
+      <ChartCard
+        description="Full per-playlist breakdown used for the health score."
+        title="Playlist health details"
+      >
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-left text-sm">
+            <thead className="text-xs uppercase tracking-[0.14em] text-[#69736d]">
+              <tr className="border-b border-white/10">
+                <th className="px-2 py-3 font-medium">Playlist</th>
+                <th className="px-2 py-3 font-medium">Score</th>
+                <th className="px-2 py-3 font-medium">Tracks</th>
+                <th className="px-2 py-3 font-medium">Plays</th>
+                <th className="px-2 py-3 font-medium">Avg</th>
+                <th className="px-2 py-3 font-medium">Never</th>
+                <th className="px-2 py-3 font-medium">Stale</th>
+                <th className="px-2 py-3 font-medium">Top-heavy</th>
+                <th className="px-2 py-3 font-medium">Dead</th>
+              </tr>
+            </thead>
+            <tbody>
+              {playlistHealth.map((row) => (
+                <tr
+                  className="border-b border-white/5 text-[#d7ddd9]"
+                  key={row.playlistId}
+                >
+                  <td className="max-w-[14rem] truncate px-2 py-3 text-white">
+                    {row.playlist}
+                  </td>
+                  <td className="px-2 py-3 font-semibold text-white">
+                    {row.healthScore}
+                  </td>
+                  <td className="px-2 py-3">{row.trackCount.toLocaleString()}</td>
+                  <td className="px-2 py-3">{row.totalPlays.toLocaleString()}</td>
+                  <td className="px-2 py-3">{row.avgPlays}</td>
+                  <td className="px-2 py-3">
+                    {row.neverPlayed} ({row.neverPlayedPct}%)
+                  </td>
+                  <td className="px-2 py-3">
+                    {row.stale} ({row.stalePct}%)
+                  </td>
+                  <td className="px-2 py-3">{row.concentration}%</td>
+                  <td className="px-2 py-3">{row.unplayable}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </ChartCard>
     </div>
   );
