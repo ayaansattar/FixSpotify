@@ -26,11 +26,7 @@ export function SiteHeader() {
   return (
     <header className="pointer-events-none sticky top-4 z-50 px-4 sm:px-6">
       <div
-        className={`pointer-events-auto mx-auto flex w-full items-center gap-2 overflow-x-auto rounded-2xl border px-4 py-2.5 shadow-lg shadow-black/30 backdrop-blur-md ${
-          isHome
-            ? "max-w-6xl border-white/10 bg-black/55"
-            : "max-w-5xl border-white/10 bg-[#0d120f]/80"
-        }`}
+        className="pointer-events-auto mx-auto flex w-full max-w-5xl items-center gap-2 overflow-x-auto rounded-2xl border border-white/10 bg-[#0d120f]/80 px-4 py-2.5 shadow-lg shadow-black/30 backdrop-blur-md"
       >
         <Link
           className="mr-2 flex shrink-0 items-center gap-2.5 text-xl font-bold tracking-tight text-white"

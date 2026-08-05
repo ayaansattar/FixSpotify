@@ -39,13 +39,10 @@ export function FeatureShowcase({
   }
 
   return (
-    <section className="min-h-[calc(100vh-5.5rem)] w-full bg-black text-white">
+    <section className="min-h-[calc(100vh-5.5rem)] w-full text-white">
       <div className="mx-auto grid min-h-[calc(100vh-5.5rem)] w-full max-w-7xl gap-8 px-4 py-8 sm:px-8 lg:grid-cols-[minmax(18rem,24rem)_minmax(0,1fr)] lg:items-center lg:gap-12 lg:py-10">
         {/* Left: feature list */}
         <div className="flex min-w-0 flex-col justify-center order-2 lg:order-1">
-          <p className="mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-[#1ed760]">
-            What FixSpotify does
-          </p>
           <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
             A quieter way to run your playlists.
           </h1>

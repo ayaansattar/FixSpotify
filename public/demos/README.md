@@ -9,6 +9,7 @@ these filenames automatically:
 | `fair-shuffle.webm` | Fair / weighted / deck shuffle |
 | `master-mix.webm` | Multi-playlist master mix shuffle |
 | `playlist-sort.webm` | Gemini playlist sort |
+| `insights.webm` | Insights charts / playlist health |
 | `recently-deleted.webm` | Restore from recently deleted |
 | `playlists.webm` | Playlist preferences / intents |
 

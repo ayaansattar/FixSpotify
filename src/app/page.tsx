@@ -38,6 +38,14 @@ const features = [
     href: "/genre-sort",
   },
   {
+    id: "insights",
+    title: "Insights",
+    description:
+      "Charts for most/least played tracks and artists, listening over time, and per-playlist health scores from your listening history.",
+    demoSrc: "/demos/insights.webm",
+    href: "/insights",
+  },
+  {
     id: "recently-deleted",
     title: "Recently deleted",
     description:
@@ -61,7 +69,7 @@ export default async function Home() {
   const totalPlays = isSignedIn ? await db.play.count() : 0;
 
   return (
-    <main className="-mt-4 min-h-screen bg-black sm:-mt-6">
+    <main className="min-h-screen">
       <FeatureShowcase
         features={[...features]}
         isSignedIn={isSignedIn}
