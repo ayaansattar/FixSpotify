@@ -4,6 +4,27 @@ import { getPlayCounts } from "@/lib/play-counts";
 import { getPreferredPlaylists } from "@/lib/playlists";
 import { describeSpotifyError } from "@/lib/spotify";
 
+export type PlaysOverTimeRange = "month" | "year" | "lifetime";
+
+export type PlaysOverTimePoint = {
+  label: string;
+  plays: number;
+};
+
+export type RankMode = "most" | "least";
+
+export type ArtistPlayRow = {
+  artist: string;
+  plays: number;
+  tracks: number;
+};
+
+export type TrackPlayRow = {
+  track: string;
+  artist: string;
+  plays: number;
+};
+
 export type InsightsData = {
   summary: {
     totalPlays: number;
@@ -12,24 +33,12 @@ export type InsightsData = {
     unplayable: number;
     preferredPlaylistCount: number;
   };
-  playCountDistribution: Array<{
-    label: string;
-    songs: number;
-  }>;
-  topArtists: Array<{
-    artist: string;
-    plays: number;
-    tracks: number;
-  }>;
-  playsByMonth: Array<{
-    month: string;
-    plays: number;
-  }>;
-  playlistSizes: Array<{
-    playlist: string;
-    tracks: number;
-  }>;
+  tracksByPlays: Record<RankMode, TrackPlayRow[]>;
+  artistsByPlays: Record<RankMode, ArtistPlayRow[]>;
+  playsOverTime: Record<PlaysOverTimeRange, PlaysOverTimePoint[]>;
 };
+
+const RANK_LIMIT = 15;
 
 /**
  * Aggregates listening-history + preferred-playlist cache data for the
@@ -86,25 +95,11 @@ export async function getInsightsData(
       accessToken,
     );
 
-    const bucketCounts = new Map<string, number>();
-    const bucketOrder = [
-      "0",
-      "1",
-      "2",
-      "3–5",
-      "6–10",
-      "11–20",
-      "21–50",
-      "51+",
-    ];
-    for (const label of bucketOrder) {
-      bucketCounts.set(label, 0);
-    }
-
     const artistAgg = new Map<
       string,
       { plays: number; tracks: number; label: string }
     >();
+    const trackRows: TrackPlayRow[] = [];
     let neverPlayed = 0;
     let unplayable = 0;
 
@@ -117,8 +112,11 @@ export async function getInsightsData(
         unplayable += 1;
       }
 
-      const bucket = bucketForPlayCount(plays);
-      bucketCounts.set(bucket, (bucketCounts.get(bucket) ?? 0) + 1);
+      trackRows.push({
+        track: track.name,
+        artist: track.artistNames.join(", ") || "Unknown artist",
+        plays,
+      });
 
       const artistKey =
         track.artistNames[0]?.trim().toLowerCase() ||
@@ -135,62 +133,53 @@ export async function getInsightsData(
       artistAgg.set(artistKey, current);
     }
 
-    const since = new Date();
-    since.setMonth(since.getMonth() - 17);
-    since.setDate(1);
-    since.setHours(0, 0, 0, 0);
+    const artistsSorted = Array.from(artistAgg.values())
+      .map((row) => ({
+        artist: row.label,
+        plays: row.plays,
+        tracks: row.tracks,
+      }))
+      .sort(
+        (a, b) =>
+          b.plays - a.plays ||
+          b.tracks - a.tracks ||
+          a.artist.localeCompare(b.artist),
+      );
 
-    const recentPlays = await db.play.findMany({
-      where: { playedAt: { gte: since } },
+    const tracksSorted = [...trackRows].sort(
+      (a, b) =>
+        b.plays - a.plays ||
+        a.track.localeCompare(b.track) ||
+        a.artist.localeCompare(b.artist),
+    );
+
+    const playDates = await db.play.findMany({
       select: { playedAt: true },
       orderBy: { playedAt: "asc" },
     });
-
-    const monthCounts = new Map<string, number>();
-    for (let i = 0; i < 18; i += 1) {
-      const date = new Date(since);
-      date.setMonth(since.getMonth() + i);
-      monthCounts.set(monthKey(date), 0);
-    }
-    for (const play of recentPlays) {
-      const key = monthKey(play.playedAt);
-      if (monthCounts.has(key)) {
-        monthCounts.set(key, (monthCounts.get(key) ?? 0) + 1);
-      }
-    }
-
-    const totalPlays = await db.play.count();
+    const playedAts = playDates.map((play) => play.playedAt);
 
     return {
       summary: {
-        totalPlays,
+        totalPlays: playDates.length,
         uniquePlaylistTracks: uniqueTracks.length,
         neverPlayed,
         unplayable,
         preferredPlaylistCount: playlists.length,
       },
-      playCountDistribution: bucketOrder.map((label) => ({
-        label,
-        songs: bucketCounts.get(label) ?? 0,
-      })),
-      topArtists: Array.from(artistAgg.values())
-        .sort((a, b) => b.plays - a.plays || b.tracks - a.tracks)
-        .slice(0, 15)
-        .map((row) => ({
-          artist: row.label,
-          plays: row.plays,
-          tracks: row.tracks,
-        })),
-      playsByMonth: Array.from(monthCounts.entries()).map(([month, plays]) => ({
-        month,
-        plays,
-      })),
-      playlistSizes: trackLists
-        .map(({ playlist, tracks }) => ({
-          playlist: playlist.name,
-          tracks: new Set(tracks.map((track) => track.id)).size,
-        }))
-        .sort((a, b) => b.tracks - a.tracks),
+      tracksByPlays: {
+        most: tracksSorted.slice(0, RANK_LIMIT),
+        least: [...tracksSorted].reverse().slice(0, RANK_LIMIT),
+      },
+      artistsByPlays: {
+        most: artistsSorted.slice(0, RANK_LIMIT),
+        least: [...artistsSorted].reverse().slice(0, RANK_LIMIT),
+      },
+      playsOverTime: {
+        month: buildDailySeries(playedAts, 30),
+        year: buildMonthlySeries(playedAts, 12),
+        lifetime: buildLifetimeMonthlySeries(playedAts),
+      },
     };
   } catch (error) {
     return {
@@ -199,19 +188,116 @@ export async function getInsightsData(
   }
 }
 
-function bucketForPlayCount(plays: number) {
-  if (plays <= 0) return "0";
-  if (plays === 1) return "1";
-  if (plays === 2) return "2";
-  if (plays <= 5) return "3–5";
-  if (plays <= 10) return "6–10";
-  if (plays <= 20) return "11–20";
-  if (plays <= 50) return "21–50";
-  return "51+";
+function startOfDay(date: Date) {
+  const next = new Date(date);
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
+
+function startOfMonth(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function dayKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function monthKey(date: Date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
   return `${year}-${month}`;
+}
+
+function buildDailySeries(playedAts: Date[], days: number): PlaysOverTimePoint[] {
+  const end = startOfDay(new Date());
+  const start = new Date(end);
+  start.setDate(end.getDate() - (days - 1));
+
+  const counts = new Map<string, number>();
+  for (let i = 0; i < days; i += 1) {
+    const date = new Date(start);
+    date.setDate(start.getDate() + i);
+    counts.set(dayKey(date), 0);
+  }
+
+  for (const playedAt of playedAts) {
+    if (playedAt < start) {
+      continue;
+    }
+    const key = dayKey(playedAt);
+    if (counts.has(key)) {
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+  }
+
+  return Array.from(counts.entries()).map(([label, plays]) => ({
+    label,
+    plays,
+  }));
+}
+
+function buildMonthlySeries(
+  playedAts: Date[],
+  months: number,
+): PlaysOverTimePoint[] {
+  const end = startOfMonth(new Date());
+  const start = new Date(end);
+  start.setMonth(end.getMonth() - (months - 1));
+
+  const counts = new Map<string, number>();
+  for (let i = 0; i < months; i += 1) {
+    const date = new Date(start);
+    date.setMonth(start.getMonth() + i);
+    counts.set(monthKey(date), 0);
+  }
+
+  for (const playedAt of playedAts) {
+    if (playedAt < start) {
+      continue;
+    }
+    const key = monthKey(playedAt);
+    if (counts.has(key)) {
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+  }
+
+  return Array.from(counts.entries()).map(([label, plays]) => ({
+    label,
+    plays,
+  }));
+}
+
+function buildLifetimeMonthlySeries(playedAts: Date[]): PlaysOverTimePoint[] {
+  if (playedAts.length === 0) {
+    return [];
+  }
+
+  const start = startOfMonth(playedAts[0]!);
+  const end = startOfMonth(new Date());
+  const months =
+    (end.getFullYear() - start.getFullYear()) * 12 +
+    (end.getMonth() - start.getMonth()) +
+    1;
+
+  const counts = new Map<string, number>();
+  for (let i = 0; i < months; i += 1) {
+    const date = new Date(start);
+    date.setMonth(start.getMonth() + i);
+    counts.set(monthKey(date), 0);
+  }
+
+  for (const playedAt of playedAts) {
+    const key = monthKey(playedAt);
+    if (counts.has(key)) {
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+  }
+
+  return Array.from(counts.entries()).map(([label, plays]) => ({
+    label,
+    plays,
+  }));
 }

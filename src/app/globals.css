@@ -73,3 +73,16 @@ button:active:not(:disabled) {
 .rounded-3xl {
   box-shadow: 0 1px 0 rgb(255 255 255 / 4%) inset;
 }
+
+/* Keep Recharts axis/tooltip text readable on the dark theme. */
+.recharts-cartesian-axis-tick-value,
+.recharts-text,
+.recharts-legend-item-text {
+  fill: #d7ddd9 !important;
+}
+
+.recharts-default-tooltip,
+.recharts-tooltip-label,
+.recharts-tooltip-item {
+  color: #f4f7f5 !important;
+}
