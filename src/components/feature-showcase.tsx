@@ -10,10 +10,8 @@ export type ShowcaseFeature = {
   id: string;
   title: string;
   description: string;
-  /** Optional looping demo under /public/demos */
-  demoSrc?: string | null;
-  /** Poster / first-frame image if available */
-  posterSrc?: string | null;
+  /** Screenshot under /public/demos (jpg / png / webp). */
+  imageSrc?: string | null;
   href?: string;
 };
 
@@ -48,7 +46,9 @@ export function FeatureShowcase({
           </h1>
           <p className="mt-3 text-sm leading-6 text-[#a7b0aa] sm:text-base">
             Tour the product below
-            {isSignedIn ? ", then jump into any tool from the header." : ", then connect Spotify to use it."}
+            {isSignedIn
+              ? ", then jump into any tool from the header."
+              : ", then connect Spotify to use it."}
           </p>
 
           {isSignedIn ? (
@@ -149,63 +149,90 @@ export function FeatureShowcase({
           </div>
         </div>
 
-        {/* Right: demo / hero */}
+        {/* Right: screenshot stack with Apple-style crossfade */}
         <div className="relative flex min-h-[16rem] items-center justify-center order-1 lg:order-2 lg:min-h-[28rem]">
-          <FeatureMedia feature={active} key={active.id} />
+          <FeatureMediaStack activeId={active.id} features={features} />
         </div>
       </div>
     </section>
   );
 }
 
-function FeatureMedia({ feature }: { feature: ShowcaseFeature }) {
-  const [failed, setFailed] = useState(!feature.demoSrc);
+function FeatureMediaStack({
+  features,
+  activeId,
+}: {
+  features: ShowcaseFeature[];
+  activeId: string;
+}) {
+  return (
+    <div className="relative aspect-[16/10] w-full overflow-hidden rounded-[2rem] border border-white/10 bg-[#0a0a0a] shadow-2xl shadow-black/50">
+      {features.map((feature) => {
+        const isActive = feature.id === activeId;
+        return (
+          <div
+            aria-hidden={!isActive}
+            className={`absolute inset-0 transition-[opacity,transform] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+              isActive
+                ? "z-10 opacity-100 scale-100"
+                : "z-0 opacity-0 scale-[1.02] pointer-events-none"
+            }`}
+            key={feature.id}
+          >
+            <FeatureStill feature={feature} priority={isActive} />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function FeatureStill({
+  feature,
+  priority,
+}: {
+  feature: ShowcaseFeature;
+  priority: boolean;
+}) {
+  const [failed, setFailed] = useState(!feature.imageSrc);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    setFailed(!feature.demoSrc);
-  }, [feature.demoSrc, feature.id]);
+    setFailed(!feature.imageSrc);
+    setLoaded(false);
+  }, [feature.imageSrc, feature.id]);
 
-  if (!feature.demoSrc || failed) {
+  if (!feature.imageSrc || failed) {
     return <DemoPlaceholder feature={feature} />;
   }
 
-  const isVideo = /\.(webm|mp4|mov)(\?|$)/i.test(feature.demoSrc);
-
-  if (isVideo) {
-    return (
-      <div className="relative w-full overflow-hidden rounded-[2rem] border border-white/10 bg-[#0a0a0a] shadow-2xl shadow-black/50">
-        <video
-          autoPlay
-          className="aspect-[16/10] h-auto w-full object-cover"
-          key={feature.demoSrc}
-          loop
-          muted
-          onError={() => setFailed(true)}
-          playsInline
-          poster={feature.posterSrc ?? undefined}
-          src={feature.demoSrc}
-        />
-      </div>
-    );
-  }
-
   return (
-    <div className="relative w-full overflow-hidden rounded-[2rem] border border-white/10 bg-[#0a0a0a] shadow-2xl shadow-black/50">
+    <>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        alt=""
-        className="aspect-[16/10] h-auto w-full object-cover"
-        key={feature.demoSrc}
+        alt={`${feature.title} screenshot`}
+        className={`h-full w-full object-contain object-center transition-opacity duration-500 ${
+          loaded ? "opacity-100" : "opacity-0"
+        }`}
+        decoding="async"
+        loading={priority ? "eager" : "lazy"}
         onError={() => setFailed(true)}
-        src={feature.demoSrc}
+        onLoad={() => setLoaded(true)}
+        src={feature.imageSrc}
       />
-    </div>
+      {!loaded ? (
+        <div
+          aria-hidden
+          className="absolute inset-0 bg-[radial-gradient(ellipse_at_30%_20%,rgb(30_215_96_/_12%),transparent_55%),#0a0a0a]"
+        />
+      ) : null}
+    </>
   );
 }
 
 function DemoPlaceholder({ feature }: { feature: ShowcaseFeature }) {
   return (
-    <div className="relative flex aspect-[16/10] w-full flex-col justify-between overflow-hidden rounded-[2rem] border border-white/10 bg-[radial-gradient(ellipse_at_30%_20%,rgb(30_215_96_/_18%),transparent_50%),#0a0a0a] p-8 shadow-2xl shadow-black/50 sm:p-10">
+    <div className="flex h-full w-full flex-col justify-between bg-[radial-gradient(ellipse_at_30%_20%,rgb(30_215_96_/_18%),transparent_50%),#0a0a0a] p-8 sm:p-10">
       <div>
         <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#1ed760]">
           Feature preview
@@ -219,13 +246,13 @@ function DemoPlaceholder({ feature }: { feature: ShowcaseFeature }) {
       </div>
 
       <div className="mt-8 rounded-2xl border border-dashed border-white/15 bg-white/[0.03] px-5 py-4">
-        <p className="text-sm font-medium text-white/90">Demo slot ready</p>
+        <p className="text-sm font-medium text-white/90">Screenshot slot ready</p>
         <p className="mt-1 text-xs leading-5 text-[#69736d] sm:text-sm">
-          Drop a short looping screen recording at{" "}
+          Drop a product screenshot at{" "}
           <code className="rounded bg-white/10 px-1.5 py-0.5 text-[#8cf0ae]">
-            public/demos/{feature.id}.webm
+            public/demos/{feature.id.replaceAll("-", "_")}.png
           </code>{" "}
-          (or .mp4 / .gif).
+          (or .jpg / .webp).
         </p>
       </div>
 

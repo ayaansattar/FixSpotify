@@ -12,8 +12,9 @@ Spotify account and works with Spotify's Development Mode.
 - Imports Spotify Extended Streaming History.
 - Automatically syncs recent plays every 15 minutes, with a manual sync from the
   home page.
-- Home product tour that walks through major tools, with optional looping demo
-  clips under `public/demos/`. Signed-in users also see total plays logged.
+- Home product tour that walks through major tools, with optional product
+  screenshots under `public/demos/` that crossfade as you switch features.
+  Signed-in users also see total plays logged.
 - Ranks playlist tracks by least-listened over 6 months, 1 year, or lifetime.
 - Identifies tracks that Spotify marks unavailable in the listener's market.
 - Searches and filters dashboard tracks by title, artist, availability, and
