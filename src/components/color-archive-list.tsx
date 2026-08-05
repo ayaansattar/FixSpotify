@@ -30,8 +30,6 @@ type ColorArchiveListProps = {
   className?: string;
   /** Extra content under the focused row (actions, notes, etc.). */
   renderActivePanel?: (item: ColorArchiveItem, index: number) => ReactNode;
-  /** Fired when the focused song changes. */
-  onActiveChange?: (item: ColorArchiveItem | null, index: number) => void;
 };
 
 const PREVIEW_SIZE = 280;
@@ -58,7 +56,6 @@ export function ColorArchiveList({
   items,
   className = "",
   renderActivePanel,
-  onActiveChange,
 }: ColorArchiveListProps) {
   const listRef = useRef<HTMLOListElement>(null);
   /** Title rows only — exclude the expanding action panel from focus math. */
@@ -215,10 +212,6 @@ export function ColorArchiveList({
     const frame = requestAnimationFrame(updateActiveFromScroll);
     return () => cancelAnimationFrame(frame);
   }, [items, updateActiveFromScroll]);
-
-  useEffect(() => {
-    onActiveChange?.(activeItem, activeIndex ?? -1);
-  }, [activeItem, activeIndex, onActiveChange]);
 
   useEffect(() => {
     const onScroll = () => updateActiveFromScroll();

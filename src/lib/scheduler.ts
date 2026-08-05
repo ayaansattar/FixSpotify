@@ -8,7 +8,7 @@ declare global {
   var __spotifySchedulerStarted: boolean | undefined;
 }
 
-async function runHourlySync() {
+async function runPlaySync() {
   try {
     const accessToken = await getValidAccessToken();
 
@@ -57,8 +57,8 @@ export function startScheduler() {
 
   globalThis.__spotifySchedulerStarted = true;
 
-  cron.schedule("0 * * * *", () => {
-    void runHourlySync();
+  cron.schedule("*/15 * * * *", () => {
+    void runPlaySync();
   });
 
   cron.schedule("15 0 * * *", () => {
@@ -66,5 +66,7 @@ export function startScheduler() {
   });
 
   void purgeDeletedTrackHistory();
-  console.info("[scheduler] Hourly play sync and daily cleanup scheduled");
+  console.info(
+    "[scheduler] Play sync every 15 minutes and daily cleanup scheduled",
+  );
 }

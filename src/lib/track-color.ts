@@ -19,7 +19,7 @@ export function colorFromKey(key: string): string {
 }
 
 /** Convert sampled RGB into a vivid HSL background string. */
-export function vividFromRgb(r: number, g: number, b: number): string {
+function vividFromRgb(r: number, g: number, b: number): string {
   const rn = r / 255;
   const gn = g / 255;
   const bn = b / 255;

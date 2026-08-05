@@ -276,7 +276,7 @@ function artistsMatch(
 }
 
 /** Keep letters from any script; strip punctuation and collapse whitespace. */
-export function normalizeTitle(name: string) {
+function normalizeTitle(name: string) {
   return name
     .toLowerCase()
     .normalize("NFKD")
@@ -290,7 +290,7 @@ export function normalizeTitle(name: string) {
  * featuring tags and soundtrack "From …" suffixes so alternate releases of the
  * same song still match, while leaving Remix as its own recording.
  */
-export function softNormalizeTitle(name: string) {
+function softNormalizeTitle(name: string) {
   const withoutSoundtrack = name
     // "Dooriyan (From "Love Aaj Kal")" / "Jugni (from "Cocktail")"
     .replace(/\(\s*from\b[^)]*\)/gi, " ")

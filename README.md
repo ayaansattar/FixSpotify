@@ -10,13 +10,17 @@ Spotify account and works with Spotify's Development Mode.
 ## Features
 
 - Imports Spotify Extended Streaming History.
-- Automatically syncs recent plays every hour, with a manual sync from the home
-  page.
+- Automatically syncs recent plays every 15 minutes, with a manual sync from the
+  home page.
+- Home product tour that walks through major tools, with optional looping demo
+  clips under `public/demos/`. Signed-in users also see total plays logged.
 - Ranks playlist tracks by least-listened over 6 months, 1 year, or lifetime.
 - Identifies tracks that Spotify marks unavailable in the listener's market.
 - Searches and filters dashboard tracks by title, artist, availability, and
   play-count ranges.
 - Plays a single track on the active Spotify device, or opens it in Spotify.
+- Scroll-focused track lists that shift the full-viewport color to each song’s
+  album/artist palette and show a floating album-cover preview.
 - Merges play counts across alternate Spotify track IDs using title/artist
   matching and ISRC identity (so localized titles like Arabic/Latin versions
   of the same recording count together).
@@ -27,7 +31,8 @@ Spotify account and works with Spotify's Development Mode.
 - Offers a weighted shuffle that favors tracks with fewer lifetime plays.
 - Mixes multiple preferred playlists into one shuffle pool (master mix).
 - Skips unplayable tracks when shuffling and previews the resulting order
-  (Spotify playback accepts up to 100 URIs per request).
+  (Spotify playback accepts up to 100 URIs per request). Disables Spotify’s
+  native shuffle so the custom order is respected.
 - Analyzes playlist fit with Gemini using your written playlist intents,
   artist-cohesion rules (keep an artist's songs together when most already
   live in one playlist), and optional per-track "keep here because…" notes.
@@ -35,8 +40,15 @@ Spotify account and works with Spotify's Development Mode.
   Suggests a better preferred playlist when a track looks misfiled.
 - Adds tracks to suggested playlists without duplicates, and can remove them
   from the current playlist afterward.
-- Lets you select and order the playlists shown in the app.
-- Caches large playlist track lists in SQLite to reduce Spotify API usage.
+- Lets you select and order the playlists shown in the app, and write short
+  intents used by AI playlist sort.
+- Caches large playlist track lists in SQLite to reduce Spotify API usage, with
+  a **Refresh from Spotify** control when you change playlists outside the app.
+- Insights page with Recharts visualizations from listening history and
+  preferred playlists: summary stats, most/least played tracks and artists,
+  plays over time (30-day, 12-month, lifetime), and per-playlist health
+  (score, never-played share, 90-day stale share, size vs plays, play
+  concentration, and a full details table).
 
 ## Stack
 
@@ -44,6 +56,7 @@ Spotify account and works with Spotify's Development Mode.
 - NextAuth with the Spotify provider
 - Prisma and SQLite
 - Tailwind CSS
+- Recharts for Insights charts
 - `node-cron` for scheduled synchronization and cleanup
 - Docker Compose and Caddy for production deployment and HTTPS
 
@@ -103,6 +116,11 @@ SPOTIFY_CLIENT_SECRET=
 NEXTAUTH_URL=http://127.0.0.1:3000
 NEXTAUTH_SECRET=
 DATABASE_URL="file:./prisma/dev.db"
+
+# Free key from https://aistudio.google.com/apikey
+GEMINI_API_KEY=
+# Optional override (default: gemini-flash-latest)
+# GEMINI_MODEL=gemini-flash-latest
 ```
 
 Generate a NextAuth secret with:
@@ -128,7 +146,7 @@ Open <http://127.0.0.1:3000>.
 
 ## Listening history
 
-The hourly scheduler only has access to Spotify's 50 most recent plays.
+The 15-minute scheduler only has access to Spotify's 50 most recent plays.
 FixSpotify therefore includes a one-time importer for Spotify Extended
 Streaming History exports.
 
@@ -155,7 +173,7 @@ The importer:
 - Backfills missing artist names on existing play rows when re-run.
 - Can be run repeatedly without creating duplicates.
 
-After the initial import, the hourly scheduler keeps the database current.
+After the initial import, the 15-minute scheduler keeps the database current.
 Running the importer again is only necessary when importing a newer export,
 rebuilding the database, or backfilling artist names after a schema update.
 
@@ -214,6 +232,7 @@ SPOTIFY_CLIENT_SECRET=
 NEXTAUTH_URL=https://your-domain.example.com
 NEXTAUTH_SECRET=
 DATABASE_URL=file:/app/data/prod.db
+GEMINI_API_KEY=
 ```
 
 Build and start:
@@ -262,7 +281,7 @@ across deployments.
 
 The app runs two in-process cron tasks:
 
-- Every hour: fetch and store recent Spotify plays.
+- Every 15 minutes: fetch and store recent Spotify plays.
 - Daily: delete recently deleted records older than seven days.
 
 The application container must remain running for these jobs to execute.
