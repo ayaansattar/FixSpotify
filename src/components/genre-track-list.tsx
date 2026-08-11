@@ -18,6 +18,8 @@ type GenreTrackListItem = {
   name: string;
   artistNames: string;
   imageUrl: string | null;
+  isPlayable: boolean;
+  availabilityReason?: string;
   status: MatchStatus;
   reason: string | null;
   suggestion: SuggestedPlaylist | null;
@@ -36,6 +38,7 @@ export function GenreTrackList({
   const router = useRouter();
   const [tracks, setTracks] = useState(initialTracks);
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [playingTrackId, setPlayingTrackId] = useState<string | null>(null);
   const [addedIds, setAddedIds] = useState<Record<string, true>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
@@ -47,6 +50,7 @@ export function GenreTrackList({
     setErrors({});
     setNoteOpenId(null);
     setPendingId(null);
+    setPlayingTrackId(null);
   }, [initialTracks]);
 
   const archiveItems = useMemo(
@@ -61,6 +65,46 @@ export function GenreTrackList({
       })),
     [tracks],
   );
+
+  async function playTrack(track: GenreTrackListItem) {
+    if (!track.isPlayable) {
+      return;
+    }
+
+    setPendingId(track.id);
+    setErrors((current) => {
+      const next = { ...current };
+      delete next[track.id];
+      return next;
+    });
+
+    try {
+      const response = await fetch("/api/playback", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ trackUri: track.uri }),
+      });
+      const body = (await response.json().catch(() => null)) as {
+        error?: string;
+      } | null;
+
+      if (!response.ok) {
+        throw new Error(body?.error ?? "Unable to start playback.");
+      }
+
+      setPlayingTrackId(track.id);
+    } catch (error) {
+      setErrors((current) => ({
+        ...current,
+        [track.id]:
+          error instanceof Error
+            ? error.message
+            : "Unable to start playback.",
+      }));
+    } finally {
+      setPendingId(null);
+    }
+  }
 
   async function addToSuggestedPlaylist(track: GenreTrackListItem) {
     if (!track.suggestion) {
@@ -271,6 +315,32 @@ export function GenreTrackList({
             ) : null}
 
             <div className="flex flex-wrap items-center gap-2">
+              {track.isPlayable ? (
+                <button
+                  className="cursor-pointer rounded-full border border-black/20 bg-black/10 px-3 py-1.5 text-xs font-semibold text-black hover:bg-black/15 disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={pending}
+                  onClick={() => void playTrack(track)}
+                  type="button"
+                >
+                  {pending
+                    ? "Working…"
+                    : playingTrackId === track.id
+                      ? "Playing"
+                      : "Play"}
+                </button>
+              ) : (
+                <span
+                  className="rounded-full border border-red-900/30 bg-red-900/10 px-3 py-1.5 text-xs text-red-950"
+                  title={
+                    track.availabilityReason
+                      ? `Spotify restriction: ${track.availabilityReason}`
+                      : "This track is unavailable for playback."
+                  }
+                >
+                  Unavailable
+                </span>
+              )}
+
               {track.suggestion ? (
                 added ? (
                   <button

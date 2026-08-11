@@ -152,6 +152,8 @@ export type AnalyzedSortTrack = {
   name: string;
   artistNames: string;
   imageUrl: string | null;
+  isPlayable: boolean;
+  availabilityReason?: string;
   status: "match" | "no-match" | "pending";
   reason: string | null;
   suggestion: { playlistId: string; playlistName: string } | null;
@@ -192,14 +194,20 @@ export async function loadAnalyzedTracks(options: {
 
   let pendingCount = 0;
   const analyzed: AnalyzedSortTrack[] = options.tracks.map((track) => {
+    const base = {
+      id: track.id,
+      uri: track.uri,
+      name: track.name,
+      artistNames: track.artists.map((artist) => artist.name).join(", "),
+      imageUrl: track.imageUrl,
+      isPlayable: track.isPlayable,
+      availabilityReason: track.availabilityReason,
+    };
+
     const note = noteByTrack.get(track.id);
     if (note?.note.trim()) {
       return {
-        id: track.id,
-        uri: track.uri,
-        name: track.name,
-        artistNames: track.artists.map((artist) => artist.name).join(", "),
-        imageUrl: track.imageUrl,
+        ...base,
         status: "match" as const,
         reason: `Kept by your note: ${note.note}`,
         suggestion: null,
@@ -217,11 +225,8 @@ export async function loadAnalyzedTracks(options: {
 
       if (home.playlistId === options.sourcePlaylistId) {
         return {
-          id: track.id,
-          uri: track.uri,
-          name: track.name,
+          ...base,
           artistNames: artistNames.join(", "),
-          imageUrl: track.imageUrl,
           status: "match" as const,
           reason: `Artist cohesion: most of ${name}'s tracks are already in this playlist (${home.share}).`,
           suggestion: null,
@@ -231,11 +236,8 @@ export async function loadAnalyzedTracks(options: {
 
       // Majority elsewhere → suggest that playlist even before AI.
       return {
-        id: track.id,
-        uri: track.uri,
-        name: track.name,
+        ...base,
         artistNames: artistNames.join(", "),
-        imageUrl: track.imageUrl,
         status: "no-match" as const,
         reason: `Artist cohesion: most of ${name}'s tracks live in ${home.playlistName} (${home.share}).`,
         suggestion: {
@@ -250,11 +252,7 @@ export async function loadAnalyzedTracks(options: {
     if (!cachedRow) {
       pendingCount += 1;
       return {
-        id: track.id,
-        uri: track.uri,
-        name: track.name,
-        artistNames: track.artists.map((artist) => artist.name).join(", "),
-        imageUrl: track.imageUrl,
+        ...base,
         status: "pending" as const,
         reason: null,
         suggestion: null,
@@ -264,11 +262,7 @@ export async function loadAnalyzedTracks(options: {
 
     const belongs = cachedRow.belongs || !cachedRow.suggestedPlaylistId;
     return {
-      id: track.id,
-      uri: track.uri,
-      name: track.name,
-      artistNames: track.artists.map((artist) => artist.name).join(", "),
-      imageUrl: track.imageUrl,
+      ...base,
       status: belongs ? ("match" as const) : ("no-match" as const),
       reason: cachedRow.reason,
       suggestion:
