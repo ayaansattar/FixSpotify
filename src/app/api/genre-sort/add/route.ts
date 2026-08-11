@@ -3,15 +3,28 @@ import { NextResponse } from "next/server";
 
 import { authOptions } from "@/lib/auth";
 import {
+  appendTrackToPlaylistCache,
   getCachedPlaylistTracks,
-  invalidatePlaylistTracksCache,
 } from "@/lib/playlist-cache";
 import {
   addSpotifyPlaylistItem,
   describeSpotifyError,
   SpotifyApiError,
+  type SpotifyPlaylistTrack,
 } from "@/lib/spotify";
 import { getValidAccessToken } from "@/lib/tokens";
+
+function parseArtistNames(value: unknown): SpotifyPlaylistTrack["artists"] {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return [];
+  }
+
+  return value
+    .split(",")
+    .map((name) => name.trim())
+    .filter(Boolean)
+    .map((name) => ({ id: "", name }));
+}
 
 export async function POST(request: Request) {
   const session = await getServerSession(authOptions);
@@ -23,9 +36,20 @@ export async function POST(request: Request) {
   const body = (await request.json().catch(() => null)) as {
     playlistId?: unknown;
     trackUri?: unknown;
+    trackId?: unknown;
+    trackName?: unknown;
+    artistNames?: unknown;
+    albumImageUrl?: unknown;
+    isPlayable?: unknown;
   } | null;
   const playlistId = body?.playlistId;
   const trackUri = body?.trackUri;
+  const trackId = body?.trackId;
+  const trackName = body?.trackName;
+  const albumImageUrl =
+    typeof body?.albumImageUrl === "string" && body.albumImageUrl.length > 0
+      ? body.albumImageUrl
+      : null;
 
   if (
     typeof playlistId !== "string" ||
@@ -33,7 +57,15 @@ export async function POST(request: Request) {
     playlistId.length > 100 ||
     typeof trackUri !== "string" ||
     !trackUri.startsWith("spotify:track:") ||
-    trackUri.length > 100
+    trackUri.length > 100 ||
+    typeof trackId !== "string" ||
+    trackId.length === 0 ||
+    trackId.length > 100 ||
+    typeof trackName !== "string" ||
+    trackName.length === 0 ||
+    trackName.length > 500 ||
+    (albumImageUrl !== null &&
+      (albumImageUrl.length > 500 || !/^https:\/\//.test(albumImageUrl)))
   ) {
     return NextResponse.json(
       { error: "Invalid playlist or track." },
@@ -51,18 +83,28 @@ export async function POST(request: Request) {
     );
   }
 
+  const track: SpotifyPlaylistTrack = {
+    id: trackId,
+    name: trackName,
+    uri: trackUri,
+    isPlayable: body?.isPlayable !== false,
+    imageUrl: albumImageUrl,
+    artists: parseArtistNames(body?.artistNames),
+  };
+
   try {
     const playlistTracks = await getCachedPlaylistTracks(
       accessToken,
       playlistId,
     );
     const alreadyPresent = playlistTracks.some(
-      (track) => track.uri === trackUri,
+      (entry) => entry.uri === trackUri || entry.id === trackId,
     );
 
     if (!alreadyPresent) {
       await addSpotifyPlaylistItem(accessToken, playlistId, trackUri);
-      await invalidatePlaylistTracksCache(playlistId);
+      // Keep the warm cache instead of wiping it (avoids re-paging on every move).
+      await appendTrackToPlaylistCache(playlistId, track);
     }
 
     return NextResponse.json({

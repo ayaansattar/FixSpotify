@@ -125,6 +125,11 @@ export function GenreTrackList({
         body: JSON.stringify({
           playlistId: track.suggestion.playlistId,
           trackUri: track.uri,
+          trackId: track.id,
+          trackName: track.name,
+          artistNames: track.artistNames,
+          albumImageUrl: track.imageUrl,
+          isPlayable: track.isPlayable,
         }),
       });
       const body = (await response.json().catch(() => null)) as {

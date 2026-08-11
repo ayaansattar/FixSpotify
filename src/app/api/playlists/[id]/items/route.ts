@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { invalidatePlaylistTracksCache } from "@/lib/playlist-cache";
+import { removeTrackFromPlaylistCache } from "@/lib/playlist-cache";
 import {
   removeSpotifyPlaylistItem,
   SpotifyApiError,
@@ -81,7 +81,7 @@ export async function DELETE(request: Request, context: RouteContext) {
   try {
     await removeSpotifyPlaylistItem(accessToken, playlistId, trackUri);
 
-    await invalidatePlaylistTracksCache(playlistId);
+    await removeTrackFromPlaylistCache(playlistId, trackId);
 
     try {
       await db.deletedTrack.create({

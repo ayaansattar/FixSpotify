@@ -5,9 +5,9 @@ import { getPlaylistTracks, type SpotifyPlaylistTrack } from "@/lib/spotify";
  * How long a cached playlist track list is considered fresh. Large playlists
  * cost ~1 Spotify request per 50 tracks, so caching avoids re-fetching all
  * pages on every dashboard/shuffle load and keeps us under the rate limit.
- * Mutations (remove/restore) invalidate the entry and the dashboard Refresh
- * button forces a fetch, so this TTL only affects changes made in the Spotify
- * client outside this app.
+ * Local add/remove mutations patch the cache in place. Refresh from Spotify
+ * forces a fetch. The TTL only covers edits made in the Spotify client
+ * outside this app.
  */
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
@@ -39,8 +39,20 @@ function parseTracks(value: string): SpotifyPlaylistTrack[] | null {
   }
 }
 
+async function writePlaylistTracksCache(
+  playlistId: string,
+  tracks: SpotifyPlaylistTrack[],
+) {
+  const serialized = JSON.stringify(tracks);
+  await db.playlistTrackCache.upsert({
+    where: { playlistId },
+    create: { playlistId, tracks: serialized },
+    update: { tracks: serialized },
+  });
+}
+
 type CachedTracksOptions = {
-  /** Skip the cache read and force a fresh fetch (e.g. after a mutation). */
+  /** Skip the cache read and force a fresh fetch (e.g. Refresh from Spotify). */
   force?: boolean;
 };
 
@@ -63,15 +75,59 @@ export async function getCachedPlaylistTracks(
   }
 
   const tracks = await getPlaylistTracks(accessToken, playlistId);
-  const serialized = JSON.stringify(tracks);
-
-  await db.playlistTrackCache.upsert({
-    where: { playlistId },
-    create: { playlistId, tracks: serialized },
-    update: { tracks: serialized },
-  });
-
+  await writePlaylistTracksCache(playlistId, tracks);
   return tracks;
+}
+
+/** Patch cache after a local add so we don't re-page the whole playlist. */
+export async function appendTrackToPlaylistCache(
+  playlistId: string,
+  track: SpotifyPlaylistTrack,
+) {
+  const cached = await db.playlistTrackCache.findUnique({
+    where: { playlistId },
+  });
+  if (!cached) {
+    return;
+  }
+
+  const tracks = parseTracks(cached.tracks);
+  if (!tracks) {
+    await invalidatePlaylistTracksCache(playlistId);
+    return;
+  }
+
+  if (tracks.some((entry) => entry.uri === track.uri || entry.id === track.id)) {
+    return;
+  }
+
+  await writePlaylistTracksCache(playlistId, [...tracks, track]);
+}
+
+/** Patch cache after a local remove so we don't re-page the whole playlist. */
+export async function removeTrackFromPlaylistCache(
+  playlistId: string,
+  trackId: string,
+) {
+  const cached = await db.playlistTrackCache.findUnique({
+    where: { playlistId },
+  });
+  if (!cached) {
+    return;
+  }
+
+  const tracks = parseTracks(cached.tracks);
+  if (!tracks) {
+    await invalidatePlaylistTracksCache(playlistId);
+    return;
+  }
+
+  const next = tracks.filter((entry) => entry.id !== trackId);
+  if (next.length === tracks.length) {
+    return;
+  }
+
+  await writePlaylistTracksCache(playlistId, next);
 }
 
 export async function invalidatePlaylistTracksCache(playlistId: string) {
