@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       query:
-        description: "Substring to match in track names (case-insensitive)"
+        description: "Comma-separated track name substrings (case-insensitive)"
         required: true
         default: "Dai Dai"
 
@@ -36,188 +36,232 @@ jobs:
           set -euo pipefail
           cd ~/FixSpotify
 
-          # Write a small script into the container filesystem via stdin file.
           SCRIPT=$(mktemp)
           cat > "$SCRIPT" <<'NODE'
           import Database from "better-sqlite3";
-          import { createRequire } from "module";
-          import { pathToFileURL } from "url";
 
           const db = new Database("/app/data/prod.db", { readonly: true });
-          const query = process.env.QUERY || "Dai Dai";
-          const like = `%${query}%`;
+          const queries = String(process.env.QUERY || "")
+            .split(",")
+            .map((q) => q.trim())
+            .filter(Boolean);
 
-          console.log("QUERY", query);
+          function normalizeTitle(name) {
+            return name
+              .toLowerCase()
+              .normalize("NFKD")
+              .replace(/[\u0300-\u036f]/g, "")
+              .replace(/[^\p{L}\p{N}]+/gu, " ")
+              .trim();
+          }
+          function softNormalizeTitle(name) {
+            const withoutSoundtrack = name
+              .replace(/\(\s*from\b[^)]*\)/gi, " ")
+              .replace(/\s*[-\u2013\u2014]\s*from\b.*$/gi, " ")
+              .replace(/\s+from\s+['\u2018\u2019\u201c\u201d"].*$/gi, " ");
+            return normalizeTitle(withoutSoundtrack)
+              .replace(
+                /\b(remaster(?:ed)?|deluxe(?: edition)?|radio edit|radio version|mtv unplugged|unplugged|summer solstice|acoustic(?: version)?|live(?: version)?|mono|stereo|feat(?:uring)?|ft)\b/gu,
+                " ",
+              )
+              .replace(/\s+/g, " ")
+              .trim();
+          }
+          function softTitleKey(name) {
+            return softNormalizeTitle(name)
+              .replace(
+                /\b(slowed(?:\s*down)?|reverb|sped\s*up|speed\s*up|nightcore|remix(?:ed)?|bootleg|tik\s*tok|viral|edit|mix|version)\b/gu,
+                " ",
+              )
+              .replace(/\b(original|single|album|extended)\b/gu, " ")
+              .replace(/\b((?:19|20)\d{2})\b/g, " ")
+              .replace(/\s+/g, " ")
+              .trim();
+          }
+          function softNormalizeArtist(name) {
+            return normalizeTitle(name)
+              .replace(/\b(feat(?:uring)?|ft|with)\b/gu, " ")
+              .replace(/\s+/g, " ")
+              .trim();
+          }
+          function artistsMatch(play, artistIds, artistNames) {
+            if (play.artistId && play.artistId !== "unknown") {
+              if (artistIds.includes(play.artistId)) return true;
+            }
+            const playArtist = softNormalizeArtist(play.artistName);
+            if (!playArtist) return false;
+            return artistNames.some((name) => {
+              const playlistArtist = softNormalizeArtist(name);
+              if (!playlistArtist) return false;
+              return (
+                playlistArtist === playArtist ||
+                playlistArtist.includes(playArtist) ||
+                playArtist.includes(playlistArtist)
+              );
+            });
+          }
+          function isDistinctiveTitle(key) {
+            const tokens = key.split(" ").filter(Boolean);
+            return key.length >= 12 && tokens.length >= 2;
+          }
+          function titlesLooselyMatch(a, b) {
+            if (!a || !b) return false;
+            if (a === b) return true;
+            if (Math.min(a.length, b.length) < 10) return false;
+            if (Math.abs(a.length - b.length) > 1) return false;
+            // cheap levenshtein <= 1
+            let i = 0, j = 0, edits = 0;
+            while (i < a.length && j < b.length) {
+              if (a[i] === b[j]) { i++; j++; continue; }
+              edits++;
+              if (edits > 1) return false;
+              if (a.length > b.length) i++;
+              else if (b.length > a.length) j++;
+              else { i++; j++; }
+            }
+            edits += a.length - i + b.length - j;
+            return edits <= 1;
+          }
+          function aggregateByTrackId(groups) {
+            const byTrackId = new Map();
+            for (const group of groups) {
+              const existing = byTrackId.get(group.trackId);
+              if (!existing) {
+                byTrackId.set(group.trackId, {
+                  trackId: group.trackId,
+                  trackName: group.trackName,
+                  count: group.count,
+                  variants: [group],
+                });
+                continue;
+              }
+              existing.count += group.count;
+              existing.variants.push(group);
+            }
+            return Array.from(byTrackId.values());
+          }
 
           const caches = db.prepare("SELECT playlistId, tracks FROM PlaylistTrackCache").all();
-          const playlistHits = [];
-
+          const allTracks = [];
           for (const row of caches) {
             let tracks;
-            try {
-              tracks = JSON.parse(row.tracks);
-            } catch {
-              continue;
-            }
+            try { tracks = JSON.parse(row.tracks); } catch { continue; }
             for (const t of tracks) {
-              const name = String(t.name || "");
-              if (name.toLowerCase().includes(query.toLowerCase())) {
-                playlistHits.push({
-                  playlistId: row.playlistId,
-                  id: t.id,
-                  name,
-                  artists: (t.artists || []).map((a) => a.name).join(", "),
-                  artistIds: (t.artists || []).map((a) => a.id),
-                  artistNames: (t.artists || []).map((a) => a.name),
-                });
-              }
-            }
-          }
-
-          console.log("PLAYLIST_HITS", JSON.stringify(playlistHits, null, 2));
-
-          const playGroups = db
-            .prepare(`
-              SELECT trackId, trackName, artistId, artistName, COUNT(*) AS n,
-                     MIN(playedAt) AS firstPlay, MAX(playedAt) AS lastPlay
-              FROM Play
-              WHERE trackName LIKE ? COLLATE NOCASE
-              GROUP BY trackId, trackName, artistId, artistName
-              ORDER BY n DESC
-            `)
-            .all(like);
-
-          console.log("PLAY_GROUPS", JSON.stringify(playGroups, null, 2));
-
-          for (const hit of playlistHits) {
-            const exact = db
-              .prepare("SELECT COUNT(*) AS n FROM Play WHERE trackId = ?")
-              .get(hit.id);
-            console.log("EXACT_ID", hit.id, "|", hit.name, "|", exact.n);
-          }
-
-          // Also search near-title variants without requiring exact substring.
-          const loose = db
-            .prepare(`
-              SELECT trackId, trackName, artistName, COUNT(*) AS n
-              FROM Play
-              WHERE trackName LIKE '%dai%' COLLATE NOCASE
-              GROUP BY trackId, trackName, artistName
-              ORDER BY n DESC
-              LIMIT 30
-            `)
-            .all();
-          console.log("LOOSE_DAI_GROUPS", JSON.stringify(loose, null, 2));
-
-          const newest = db
-            .prepare(
-              "SELECT playedAt, trackName, trackId FROM Play ORDER BY playedAt DESC LIMIT 1",
-            )
-            .get();
-          console.log("NEWEST_PLAY", JSON.stringify(newest));
-          console.log(
-            "TOTAL_PLAYS",
-            db.prepare("SELECT COUNT(*) AS n FROM Play").get().n,
-          );
-
-          // Run the app's getPlayCounts against playlist hits.
-          const require = createRequire("/app/package.json");
-          // Prefer compiled server chunk if present; otherwise dynamic import from source dist.
-          async function countWithApp() {
-            try {
-              const mod = await import(pathToFileURL("/app/.next/server/chunks/").href);
-            } catch {
-              // fall through
-            }
-
-            // Use a minimal inlined replica of production soft-matching rules
-            // (title soft-normalize + artist match) to show expected merged count.
-            function normalizeTitle(name) {
-              return name
-                .toLowerCase()
-                .normalize("NFKD")
-                .replace(/[\u0300-\u036f]/g, "")
-                .replace(/[^\p{L}\p{N}]+/gu, " ")
-                .trim();
-            }
-            function softNormalizeTitle(name) {
-              const withoutSoundtrack = name
-                .replace(/\(\s*from\b[^)]*\)/gi, " ")
-                .replace(/\s*[-\u2013\u2014]\s*from\b.*$/gi, " ")
-                .replace(/\s+from\s+['\u2018\u2019\u201c\u201d"].*$/gi, " ");
-              return normalizeTitle(withoutSoundtrack)
-                .replace(
-                  /\b(remaster(?:ed)?|deluxe(?: edition)?|radio edit|radio version|mtv unplugged|unplugged|summer solstice|acoustic(?: version)?|live(?: version)?|mono|stereo|feat(?:uring)?|ft)\b/gu,
-                  " ",
-                )
-                .replace(/\s+/g, " ")
-                .trim();
-            }
-            function softNormalizeArtist(name) {
-              return normalizeTitle(name)
-                .replace(/\b(feat(?:uring)?|ft|with)\b/gu, " ")
-                .replace(/\s+/g, " ")
-                .trim();
-            }
-            function artistsMatch(play, artistIds, artistNames) {
-              if (play.artistId && play.artistId !== "unknown") {
-                if (artistIds.includes(play.artistId)) return true;
-              }
-              const playArtist = softNormalizeArtist(play.artistName);
-              if (!playArtist) return false;
-              return artistNames.some((name) => {
-                const playlistArtist = softNormalizeArtist(name);
-                if (!playlistArtist) return false;
-                return (
-                  playlistArtist === playArtist ||
-                  playlistArtist.includes(playArtist) ||
-                  playArtist.includes(playlistArtist)
-                );
+              allTracks.push({
+                playlistId: row.playlistId,
+                id: t.id,
+                name: String(t.name || ""),
+                artistIds: (t.artists || []).map((a) => a.id).filter(Boolean),
+                artistNames: (t.artists || []).map((a) => a.name).filter(Boolean),
               });
             }
+          }
 
-            const allGroups = db
-              .prepare(`
-                SELECT trackId, trackName, artistId, artistName, COUNT(*) AS n
-                FROM Play
-                GROUP BY trackId, trackName, artistId, artistName
-              `)
-              .all()
-              .map((g) => ({
-                trackId: g.trackId,
-                trackName: g.trackName,
-                artistId: g.artistId,
-                artistName: g.artistName,
-                count: g.n,
-              }));
+          const playGroups = db.prepare(`
+            SELECT trackId, trackName, artistId, artistName, COUNT(*) AS n
+            FROM Play
+            GROUP BY trackId, trackName, artistId, artistName
+          `).all().map((g) => ({
+            trackId: g.trackId,
+            trackName: g.trackName,
+            artistId: g.artistId,
+            artistName: g.artistName,
+            count: g.n,
+          }));
+          const aggregated = aggregateByTrackId(playGroups);
+          const aliasBuckets = new Map();
+          for (const play of aggregated) {
+            const key = softTitleKey(play.trackName);
+            if (!key) continue;
+            const entries = aliasBuckets.get(key) ?? [];
+            entries.push(play);
+            aliasBuckets.set(key, entries);
+          }
+          const aliasKeys = Array.from(aliasBuckets.keys());
 
-            for (const hit of playlistHits) {
-              let count = db
-                .prepare("SELECT COUNT(*) AS n FROM Play WHERE trackId = ?")
-                .get(hit.id).n;
-              const counted = new Set([hit.id]);
-              const key = softNormalizeTitle(hit.name);
-              for (const g of allGroups) {
-                if (counted.has(g.trackId)) continue;
-                if (softNormalizeTitle(g.trackName) !== key) continue;
-                if (!artistsMatch(g, hit.artistIds, hit.artistNames)) continue;
-                counted.add(g.trackId);
-                count += g.count;
+          function mergedCount(track) {
+            let count = db.prepare("SELECT COUNT(*) AS n FROM Play WHERE trackId = ?").get(track.id).n;
+            const counted = new Set([track.id]);
+            const key = softTitleKey(track.name);
+            if (!key) return { count, key, exact: count };
+            const exact = count;
+            for (const candidateKey of aliasKeys) {
+              if (!titlesLooselyMatch(key, candidateKey)) continue;
+              for (const candidate of aliasBuckets.get(candidateKey) ?? []) {
+                if (counted.has(candidate.trackId)) continue;
+                const artistOk = candidate.variants.some((v) =>
+                  artistsMatch(v, track.artistIds, track.artistNames),
+                );
+                if (!artistOk && !isDistinctiveTitle(key)) continue;
+                counted.add(candidate.trackId);
+                count += candidate.count;
               }
-              console.log(
-                "MERGED_SOFT_COUNT",
-                hit.id,
-                "|",
-                hit.name,
-                "|",
-                count,
-                "| softKey=",
-                key,
+            }
+            return { count, key, exact };
+          }
+
+          for (const query of queries) {
+            console.log("\n==== QUERY:", query, "====");
+            const q = query.toLowerCase();
+            const hits = allTracks.filter((t) => t.name.toLowerCase().includes(q));
+            // Prefer modern-pop-ish / unique hits; print all playlist hits
+            if (hits.length === 0) {
+              console.log("PLAYLIST_HITS: none");
+            }
+            for (const hit of hits) {
+              const related = playGroups.filter((g) =>
+                softTitleKey(g.trackName).includes(softTitleKey(hit.name).slice(0, 8)) ||
+                g.trackName.toLowerCase().includes(q) ||
+                softTitleKey(g.trackName) === softTitleKey(hit.name)
               );
+              // tighter related: same soft key loosely or name contains query
+              const relatedTight = playGroups.filter((g) => {
+                const gk = softTitleKey(g.trackName);
+                const hk = softTitleKey(hit.name);
+                return (
+                  g.trackName.toLowerCase().includes(q) ||
+                  (hk && gk && titlesLooselyMatch(hk, gk))
+                );
+              });
+              const merged = mergedCount(hit);
+              console.log(JSON.stringify({
+                playlistId: hit.playlistId,
+                id: hit.id,
+                name: hit.name,
+                artists: hit.artistNames.join(", "),
+                exactIdPlays: merged.exact,
+                softKey: merged.key,
+                mergedSoftCount: merged.count,
+                relatedPlays: relatedTight.map((g) => ({
+                  trackId: g.trackId,
+                  name: g.trackName,
+                  artist: g.artistName,
+                  n: g.count,
+                  softKey: softTitleKey(g.trackName),
+                })),
+              }, null, 2));
+            }
+
+            // Also show history matches even if not on a playlist
+            const historyOnly = playGroups.filter((g) =>
+              g.trackName.toLowerCase().includes(q)
+            );
+            if (hits.length === 0 && historyOnly.length) {
+              console.log("HISTORY_ONLY", JSON.stringify(historyOnly.map((g) => ({
+                trackId: g.trackId,
+                name: g.trackName,
+                artist: g.artistName,
+                n: g.count,
+                softKey: softTitleKey(g.trackName),
+              })), null, 2));
             }
           }
 
-          await countWithApp();
+          const newest = db.prepare(
+            "SELECT playedAt, trackName FROM Play ORDER BY playedAt DESC LIMIT 1",
+          ).get();
+          console.log("\nNEWEST_PLAY", JSON.stringify(newest));
+          console.log("TOTAL_PLAYS", db.prepare("SELECT COUNT(*) AS n FROM Play").get().n);
           NODE
 
           docker compose --env-file .env.production exec -T -e QUERY="$QUERY" app \
