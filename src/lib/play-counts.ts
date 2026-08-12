@@ -366,12 +366,15 @@ function softNormalizeTitle(name: string) {
     .replace(/\s*[-\u2013\u2014]\s*from\b.*$/gi, " ")
     // "Kalabaaz Dil from 'Lahore Se Aagey'"
     .replace(/\s+from\s+['\u2018\u2019\u201c\u201d"].*$/gi, " ")
-    // Featured-artist clauses (order varies across Spotify IDs).
+    // Featured / guest artist clauses (order and "with" vs "feat" vary).
     // "Girls (feat. Cardi B, Bebe Rexha & Charli XCX)"
+    // "luther (with sza)"
     .replace(/\([^)]*\bfeat(?:uring)?\.?[^)]*\)/gi, " ")
     .replace(/\([^)]*\bft\.?[^)]*\)/gi, " ")
+    .replace(/\([^)]*\bwith\b[^)]*\)/gi, " ")
     .replace(/\s*[-\u2013\u2014]\s*feat(?:uring)?\.?\s+.+$/gi, " ")
     .replace(/\s*[-\u2013\u2014]\s*ft\.?\s+.+$/gi, " ")
+    .replace(/\s*[-\u2013\u2014]\s*with\s+.+$/gi, " ")
     .replace(/\s+feat(?:uring)?\.?\s+.+$/gi, " ")
     .replace(/\s+ft\.?\s+.+$/gi, " ");
 
