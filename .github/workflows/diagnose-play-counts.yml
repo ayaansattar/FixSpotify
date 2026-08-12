@@ -31,14 +31,17 @@ jobs:
         env:
           QUERY: ${{ inputs.query }}
         run: |
-          # Pass query as a single argv to the remote script to avoid injection/quoting issues.
           ssh -i ~/.ssh/deploy_key "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" \
             "QUERY=$(printf %q "$QUERY") bash -s" <<'EOF'
           set -euo pipefail
           cd ~/FixSpotify
 
-          docker compose --env-file .env.production exec -T -e QUERY="$QUERY" app node --input-type=module <<'NODE'
+          # Write a small script into the container filesystem via stdin file.
+          SCRIPT=$(mktemp)
+          cat > "$SCRIPT" <<'NODE'
           import Database from "better-sqlite3";
+          import { createRequire } from "module";
+          import { pathToFileURL } from "url";
 
           const db = new Database("/app/data/prod.db", { readonly: true });
           const query = process.env.QUERY || "Dai Dai";
@@ -65,6 +68,7 @@ jobs:
                   name,
                   artists: (t.artists || []).map((a) => a.name).join(", "),
                   artistIds: (t.artists || []).map((a) => a.id),
+                  artistNames: (t.artists || []).map((a) => a.name),
                 });
               }
             }
@@ -74,11 +78,11 @@ jobs:
 
           const playGroups = db
             .prepare(`
-              SELECT trackId, trackName, artistName, COUNT(*) AS n,
+              SELECT trackId, trackName, artistId, artistName, COUNT(*) AS n,
                      MIN(playedAt) AS firstPlay, MAX(playedAt) AS lastPlay
               FROM Play
               WHERE trackName LIKE ? COLLATE NOCASE
-              GROUP BY trackId, trackName, artistName
+              GROUP BY trackId, trackName, artistId, artistName
               ORDER BY n DESC
             `)
             .all(like);
@@ -92,6 +96,19 @@ jobs:
             console.log("EXACT_ID", hit.id, "|", hit.name, "|", exact.n);
           }
 
+          // Also search near-title variants without requiring exact substring.
+          const loose = db
+            .prepare(`
+              SELECT trackId, trackName, artistName, COUNT(*) AS n
+              FROM Play
+              WHERE trackName LIKE '%dai%' COLLATE NOCASE
+              GROUP BY trackId, trackName, artistName
+              ORDER BY n DESC
+              LIMIT 30
+            `)
+            .all();
+          console.log("LOOSE_DAI_GROUPS", JSON.stringify(loose, null, 2));
+
           const newest = db
             .prepare(
               "SELECT playedAt, trackName, trackId FROM Play ORDER BY playedAt DESC LIMIT 1",
@@ -102,5 +119,108 @@ jobs:
             "TOTAL_PLAYS",
             db.prepare("SELECT COUNT(*) AS n FROM Play").get().n,
           );
+
+          // Run the app's getPlayCounts against playlist hits.
+          const require = createRequire("/app/package.json");
+          // Prefer compiled server chunk if present; otherwise dynamic import from source dist.
+          async function countWithApp() {
+            try {
+              const mod = await import(pathToFileURL("/app/.next/server/chunks/").href);
+            } catch {
+              // fall through
+            }
+
+            // Use a minimal inlined replica of production soft-matching rules
+            // (title soft-normalize + artist match) to show expected merged count.
+            function normalizeTitle(name) {
+              return name
+                .toLowerCase()
+                .normalize("NFKD")
+                .replace(/[\u0300-\u036f]/g, "")
+                .replace(/[^\p{L}\p{N}]+/gu, " ")
+                .trim();
+            }
+            function softNormalizeTitle(name) {
+              const withoutSoundtrack = name
+                .replace(/\(\s*from\b[^)]*\)/gi, " ")
+                .replace(/\s*[-\u2013\u2014]\s*from\b.*$/gi, " ")
+                .replace(/\s+from\s+['\u2018\u2019\u201c\u201d"].*$/gi, " ");
+              return normalizeTitle(withoutSoundtrack)
+                .replace(
+                  /\b(remaster(?:ed)?|deluxe(?: edition)?|radio edit|radio version|mtv unplugged|unplugged|summer solstice|acoustic(?: version)?|live(?: version)?|mono|stereo|feat(?:uring)?|ft)\b/gu,
+                  " ",
+                )
+                .replace(/\s+/g, " ")
+                .trim();
+            }
+            function softNormalizeArtist(name) {
+              return normalizeTitle(name)
+                .replace(/\b(feat(?:uring)?|ft|with)\b/gu, " ")
+                .replace(/\s+/g, " ")
+                .trim();
+            }
+            function artistsMatch(play, artistIds, artistNames) {
+              if (play.artistId && play.artistId !== "unknown") {
+                if (artistIds.includes(play.artistId)) return true;
+              }
+              const playArtist = softNormalizeArtist(play.artistName);
+              if (!playArtist) return false;
+              return artistNames.some((name) => {
+                const playlistArtist = softNormalizeArtist(name);
+                if (!playlistArtist) return false;
+                return (
+                  playlistArtist === playArtist ||
+                  playlistArtist.includes(playArtist) ||
+                  playArtist.includes(playlistArtist)
+                );
+              });
+            }
+
+            const allGroups = db
+              .prepare(`
+                SELECT trackId, trackName, artistId, artistName, COUNT(*) AS n
+                FROM Play
+                GROUP BY trackId, trackName, artistId, artistName
+              `)
+              .all()
+              .map((g) => ({
+                trackId: g.trackId,
+                trackName: g.trackName,
+                artistId: g.artistId,
+                artistName: g.artistName,
+                count: g.n,
+              }));
+
+            for (const hit of playlistHits) {
+              let count = db
+                .prepare("SELECT COUNT(*) AS n FROM Play WHERE trackId = ?")
+                .get(hit.id).n;
+              const counted = new Set([hit.id]);
+              const key = softNormalizeTitle(hit.name);
+              for (const g of allGroups) {
+                if (counted.has(g.trackId)) continue;
+                if (softNormalizeTitle(g.trackName) !== key) continue;
+                if (!artistsMatch(g, hit.artistIds, hit.artistNames)) continue;
+                counted.add(g.trackId);
+                count += g.count;
+              }
+              console.log(
+                "MERGED_SOFT_COUNT",
+                hit.id,
+                "|",
+                hit.name,
+                "|",
+                count,
+                "| softKey=",
+                key,
+              );
+            }
+          }
+
+          await countWithApp();
           NODE
+
+          docker compose --env-file .env.production exec -T -e QUERY="$QUERY" app \
+            node --input-type=module < "$SCRIPT"
+          rm -f "$SCRIPT"
           EOF
