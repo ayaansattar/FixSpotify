@@ -374,13 +374,16 @@ function softNormalizeTitle(name: string) {
     .trim();
 }
 
-/** Alias key that also collapses viral edit suffixes and remaster years. */
+/** Alias key that also collapses viral edit suffixes, remaster years, and
+ *  common release qualifiers (single / album / original version). */
 function softTitleKey(name: string) {
   return softNormalizeTitle(name)
     .replace(
       /\b(slowed(?:\s*down)?|reverb|sped\s*up|speed\s*up|nightcore|remix(?:ed)?|bootleg|tik\s*tok|viral|edit|mix|version)\b/gu,
       " ",
     )
+    // "Personal Jesus - Original Single Version" vs "Personal Jesus - Single Version"
+    .replace(/\b(original|single|album|extended)\b/gu, " ")
     // "Kashmir - 1990 Remaster" vs "Kashmir - Remaster"
     .replace(/\b((?:19|20)\d{2})\b/g, " ")
     .replace(/\s+/g, " ")
