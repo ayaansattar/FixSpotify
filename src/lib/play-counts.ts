@@ -16,12 +16,21 @@ type PlayGroup = {
   count: number;
 };
 
+/** One Spotify track ID may appear as multiple Play groups after artist backfills. */
+type AggregatedPlay = {
+  trackId: string;
+  trackName: string;
+  count: number;
+  variants: PlayGroup[];
+};
+
 /**
  * Counts plays for playlist tracks. Spotify assigns different IDs to the same
  * recording across locales/releases (e.g. Arabic "قيام" vs Latin "Qeiam"), so
  * counting by playlist track ID alone undercounts. Matching order:
  * 1) exact track ID
- * 2) soft-normalized title + artist
+ * 2) soft title (edit/remix suffixes stripped; close typos allowed) + artist,
+ *    or title alone when the soft title is distinctive enough for viral edits
  * 3) shared ISRC (when an access token is provided)
  */
 export async function getPlayCounts(
@@ -75,40 +84,60 @@ export async function getPlayCounts(
     count: group._count._all,
   }));
 
-  // Soft-title + artist aliases. Include other playlist track IDs too, so
+  // Soft-title aliases. Include other playlist track IDs too, so
   // "Take on Me" and "Take on Me - MTV Unplugged" on the same playlist share
-  // play history when their soft titles match.
-  const aliasBuckets = new Map<string, PlayGroup[]>();
+  // play history when their soft titles match. Viral edits
+  // ("Drive Forever (Slowed + Reverb)", "Driver Forever - Remix") also merge
+  // when the soft title is distinctive enough, even if upload artists differ.
+  //
+  // Aggregate by trackId first: artist backfills can split one ID across
+  // several groupBy rows; matching only the first row undercounted the rest.
+  const aggregatedPlays = aggregateByTrackId(groups);
+  const aliasBuckets = new Map<string, AggregatedPlay[]>();
 
-  for (const group of groups) {
-    const key = softNormalizeTitle(group.trackName);
+  for (const play of aggregatedPlays) {
+    const key = softTitleKey(play.trackName);
 
     if (!key) {
       continue;
     }
 
     const entries = aliasBuckets.get(key) ?? [];
-    entries.push(group);
+    entries.push(play);
     aliasBuckets.set(key, entries);
   }
 
+  const aliasKeys = Array.from(aliasBuckets.keys());
+
   for (const track of tracks) {
-    const key = softNormalizeTitle(track.name);
-    const candidates = key ? (aliasBuckets.get(key) ?? []) : [];
+    const key = softTitleKey(track.name);
+    if (!key) {
+      continue;
+    }
+
+    const matchedKeys = aliasKeys.filter((candidateKey) =>
+      titlesLooselyMatch(key, candidateKey),
+    );
     const counted = countedPlayIds.get(track.id)!;
     let extra = 0;
 
-    for (const candidate of candidates) {
-      if (counted.has(candidate.trackId)) {
-        continue;
-      }
+    for (const matchedKey of matchedKeys) {
+      const candidates = aliasBuckets.get(matchedKey) ?? [];
+      for (const candidate of candidates) {
+        if (counted.has(candidate.trackId)) {
+          continue;
+        }
 
-      if (!artistsMatch(candidate, track.artistIds, track.artistNames)) {
-        continue;
-      }
+        const artistOk = candidate.variants.some((variant) =>
+          artistsMatch(variant, track.artistIds, track.artistNames),
+        );
+        if (!artistOk && !isDistinctiveTitle(key)) {
+          continue;
+        }
 
-      counted.add(candidate.trackId);
-      extra += candidate.count;
+        counted.add(candidate.trackId);
+        extra += candidate.count;
+      }
     }
 
     countByTrack.set(track.id, (countByTrack.get(track.id) ?? 0) + extra);
@@ -207,7 +236,12 @@ async function mergeIsrcAliases(
     }
 
     const entries = countsByIsrc.get(isrc) ?? [];
-    entries.push({ trackId: group.trackId, count: group.count });
+    const existing = entries.find((entry) => entry.trackId === group.trackId);
+    if (existing) {
+      existing.count += group.count;
+    } else {
+      entries.push({ trackId: group.trackId, count: group.count });
+    }
     countsByIsrc.set(isrc, entries);
   }
 
@@ -241,6 +275,37 @@ function trackCountIsZero(
   trackId: string,
 ) {
   return (countByTrack.get(trackId) ?? 0) === 0;
+}
+
+function aggregateByTrackId(groups: PlayGroup[]): AggregatedPlay[] {
+  const byTrackId = new Map<string, AggregatedPlay>();
+
+  for (const group of groups) {
+    const existing = byTrackId.get(group.trackId);
+
+    if (!existing) {
+      byTrackId.set(group.trackId, {
+        trackId: group.trackId,
+        trackName: group.trackName,
+        count: group.count,
+        variants: [group],
+      });
+      continue;
+    }
+
+    existing.count += group.count;
+    existing.variants.push(group);
+
+    // Prefer a populated artist row's title when the first variant is sparse.
+    if (
+      (!existing.trackName || softTitleKey(existing.trackName) === "") &&
+      softTitleKey(group.trackName)
+    ) {
+      existing.trackName = group.trackName;
+    }
+  }
+
+  return Array.from(byTrackId.values());
 }
 
 function artistsMatch(
@@ -287,8 +352,9 @@ function normalizeTitle(name: string) {
 
 /**
  * Soft title key used for alias matching. Strips remaster / live / unplugged /
- * featuring tags and soundtrack "From …" suffixes so alternate releases of the
- * same song still match, while leaving Remix as its own recording.
+ * featuring tags, soundtrack "From …" suffixes, and common viral-edit labels
+ * (slowed/reverb/sped up/remix) so alternate uploads of the same song share
+ * play history.
  */
 function softNormalizeTitle(name: string) {
   const withoutSoundtrack = name
@@ -306,6 +372,70 @@ function softNormalizeTitle(name: string) {
     )
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/** Alias key that also collapses viral edit suffixes. */
+function softTitleKey(name: string) {
+  return softNormalizeTitle(name)
+    .replace(
+      /\b(slowed(?:\s*down)?|reverb|sped\s*up|speed\s*up|nightcore|remix(?:ed)?|bootleg|tik\s*tok|viral|edit|mix|version)\b/gu,
+      " ",
+    )
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isDistinctiveTitle(key: string) {
+  const tokens = key.split(" ").filter(Boolean);
+  return key.length >= 12 && tokens.length >= 2;
+}
+
+function titlesLooselyMatch(a: string, b: string) {
+  if (!a || !b) {
+    return false;
+  }
+  if (a === b) {
+    return true;
+  }
+  if (Math.min(a.length, b.length) < 10) {
+    return false;
+  }
+  return levenshtein(a, b) <= 1;
+}
+
+function levenshtein(a: string, b: string) {
+  if (a === b) {
+    return 0;
+  }
+  if (Math.abs(a.length - b.length) > 1) {
+    return 2;
+  }
+
+  const rows = a.length + 1;
+  const cols = b.length + 1;
+  const matrix: number[][] = Array.from({ length: rows }, () =>
+    Array.from({ length: cols }, () => 0),
+  );
+
+  for (let i = 0; i < rows; i += 1) {
+    matrix[i]![0] = i;
+  }
+  for (let j = 0; j < cols; j += 1) {
+    matrix[0]![j] = j;
+  }
+
+  for (let i = 1; i < rows; i += 1) {
+    for (let j = 1; j < cols; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      matrix[i]![j] = Math.min(
+        matrix[i - 1]![j]! + 1,
+        matrix[i]![j - 1]! + 1,
+        matrix[i - 1]![j - 1]! + cost,
+      );
+    }
+  }
+
+  return matrix[a.length]![b.length]!;
 }
 
 function softNormalizeArtist(name: string) {
