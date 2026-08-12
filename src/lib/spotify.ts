@@ -186,11 +186,22 @@ async function spotifyFetch<T>(
     );
   }
 
-  if (response.status === 204) {
+  if (response.status === 204 || response.status === 205) {
     return undefined as T;
   }
 
-  return (await response.json()) as T;
+  const text = await response.text();
+  if (!text.trim()) {
+    return undefined as T;
+  }
+
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    // Player endpoints sometimes return opaque non-JSON bodies on success
+    // (e.g. queue). Treat parseable failures as empty success when status is OK.
+    return undefined as T;
+  }
 }
 
 export async function getRecentlyPlayed(accessToken: string, limit = 50) {
@@ -329,6 +340,19 @@ export async function startSpotifyPlayback(
       position_ms: 0,
     }),
   });
+}
+
+export async function addSpotifyQueueTrack(
+  accessToken: string,
+  trackUri: string,
+) {
+  await spotifyFetch<void>(
+    accessToken,
+    `/me/player/queue?uri=${encodeURIComponent(trackUri)}`,
+    {
+      method: "POST",
+    },
+  );
 }
 
 export async function setSpotifyShuffle(accessToken: string, state: boolean) {

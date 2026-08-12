@@ -10,6 +10,7 @@ type DeletedTrack = {
   trackId: string;
   trackName: string;
   artistNames: string;
+  trackUri: string;
   albumImageUrl: string | null;
   deletedAt: string;
 };
@@ -26,6 +27,11 @@ type Notice = {
 export function DeletedTrackList({ initialTracks }: DeletedTrackListProps) {
   const [tracks, setTracks] = useState(initialTracks);
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [queuedTrackId, setQueuedTrackId] = useState<string | null>(null);
+  const [playingTrackId, setPlayingTrackId] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<
+    "play" | "queue" | "restore" | null
+  >(null);
   const [notice, setNotice] = useState<Notice | null>(null);
 
   const archiveItems = useMemo(
@@ -41,8 +47,71 @@ export function DeletedTrackList({ initialTracks }: DeletedTrackListProps) {
     [tracks],
   );
 
+  async function playTrack(track: DeletedTrack) {
+    setPendingId(track.id);
+    setPendingAction("play");
+    setNotice(null);
+
+    try {
+      const response = await fetch("/api/playback", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ trackUri: track.trackUri }),
+      });
+      const result = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        throw new Error(result.error ?? "Unable to start playback.");
+      }
+      setPlayingTrackId(track.id);
+      setNotice({ kind: "success", text: `Playing “${track.trackName}”.` });
+    } catch (error) {
+      setNotice({
+        kind: "error",
+        text:
+          error instanceof Error
+            ? error.message
+            : "Unable to start playback.",
+      });
+    } finally {
+      setPendingId(null);
+      setPendingAction(null);
+    }
+  }
+
+  async function queueTrack(track: DeletedTrack) {
+    setPendingId(track.id);
+    setPendingAction("queue");
+    setNotice(null);
+
+    try {
+      const response = await fetch("/api/queue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ trackUri: track.trackUri }),
+      });
+      const result = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        throw new Error(result.error ?? "Unable to add the track to the queue.");
+      }
+      setQueuedTrackId(track.id);
+      setNotice({ kind: "success", text: `Queued “${track.trackName}”.` });
+    } catch (error) {
+      setNotice({
+        kind: "error",
+        text:
+          error instanceof Error
+            ? error.message
+            : "Unable to add the track to the queue.",
+      });
+    } finally {
+      setPendingId(null);
+      setPendingAction(null);
+    }
+  }
+
   async function restore(track: DeletedTrack) {
     setPendingId(track.id);
+    setPendingAction("restore");
     setNotice(null);
 
     try {
@@ -80,6 +149,7 @@ export function DeletedTrackList({ initialTracks }: DeletedTrackListProps) {
       });
     } finally {
       setPendingId(null);
+      setPendingAction(null);
     }
   }
 
@@ -122,6 +192,30 @@ export function DeletedTrackList({ initialTracks }: DeletedTrackListProps) {
               <span className="text-xs text-black/60">
                 {formatDeletedAt(track.deletedAt)}
               </span>
+              <button
+                className="cursor-pointer rounded-full border border-black/20 bg-black/10 px-3 py-1 text-sm font-semibold text-black hover:bg-black/15 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={pending}
+                onClick={() => void playTrack(track)}
+                type="button"
+              >
+                {pending && pendingAction === "play"
+                  ? "Working…"
+                  : playingTrackId === track.id
+                    ? "Playing"
+                    : "Play"}
+              </button>
+              <button
+                className="cursor-pointer rounded-full border border-black/15 px-3 py-1 text-sm text-black/70 hover:bg-black/10 hover:text-black disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={pending}
+                onClick={() => void queueTrack(track)}
+                type="button"
+              >
+                {pending && pendingAction === "queue"
+                  ? "Queuing…"
+                  : queuedTrackId === track.id
+                    ? "Queued"
+                    : "Queue"}
+              </button>
               <a
                 className="rounded-full border border-black/15 px-3 py-1 text-sm text-black/70 hover:bg-black/10 hover:text-black"
                 href={`https://open.spotify.com/track/${track.trackId}`}
@@ -136,7 +230,9 @@ export function DeletedTrackList({ initialTracks }: DeletedTrackListProps) {
                 onClick={() => void restore(track)}
                 type="button"
               >
-                {pending ? "Restoring…" : "Restore"}
+                {pending && pendingAction === "restore"
+                  ? "Restoring…"
+                  : "Restore"}
               </button>
             </div>
           );

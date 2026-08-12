@@ -39,6 +39,10 @@ export function GenreTrackList({
   const [tracks, setTracks] = useState(initialTracks);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [playingTrackId, setPlayingTrackId] = useState<string | null>(null);
+  const [queuedTrackId, setQueuedTrackId] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<
+    "play" | "queue" | "add" | "remove" | "note" | null
+  >(null);
   const [addedIds, setAddedIds] = useState<Record<string, true>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
@@ -51,6 +55,8 @@ export function GenreTrackList({
     setNoteOpenId(null);
     setPendingId(null);
     setPlayingTrackId(null);
+    setQueuedTrackId(null);
+    setPendingAction(null);
   }, [initialTracks]);
 
   const archiveItems = useMemo(
@@ -72,6 +78,7 @@ export function GenreTrackList({
     }
 
     setPendingId(track.id);
+    setPendingAction("play");
     setErrors((current) => {
       const next = { ...current };
       delete next[track.id];
@@ -103,6 +110,49 @@ export function GenreTrackList({
       }));
     } finally {
       setPendingId(null);
+      setPendingAction(null);
+    }
+  }
+
+  async function queueTrack(track: GenreTrackListItem) {
+    if (!track.isPlayable) {
+      return;
+    }
+
+    setPendingId(track.id);
+    setPendingAction("queue");
+    setErrors((current) => {
+      const next = { ...current };
+      delete next[track.id];
+      return next;
+    });
+
+    try {
+      const response = await fetch("/api/queue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ trackUri: track.uri }),
+      });
+      const body = (await response.json().catch(() => null)) as {
+        error?: string;
+      } | null;
+
+      if (!response.ok) {
+        throw new Error(body?.error ?? "Unable to add the track to the queue.");
+      }
+
+      setQueuedTrackId(track.id);
+    } catch (error) {
+      setErrors((current) => ({
+        ...current,
+        [track.id]:
+          error instanceof Error
+            ? error.message
+            : "Unable to add the track to the queue.",
+      }));
+    } finally {
+      setPendingId(null);
+      setPendingAction(null);
     }
   }
 
@@ -112,6 +162,7 @@ export function GenreTrackList({
     }
 
     setPendingId(track.id);
+    setPendingAction("add");
     setErrors((current) => {
       const next = { ...current };
       delete next[track.id];
@@ -155,6 +206,7 @@ export function GenreTrackList({
       }));
     } finally {
       setPendingId(null);
+      setPendingAction(null);
     }
   }
 
@@ -168,6 +220,7 @@ export function GenreTrackList({
     }
 
     setPendingId(track.id);
+    setPendingAction("remove");
     setErrors((current) => {
       const next = { ...current };
       delete next[track.id];
@@ -211,6 +264,7 @@ export function GenreTrackList({
       }));
     } finally {
       setPendingId(null);
+      setPendingAction(null);
     }
   }
 
@@ -225,6 +279,7 @@ export function GenreTrackList({
     }
 
     setPendingId(track.id);
+    setPendingAction("note");
     setErrors((current) => {
       const next = { ...current };
       delete next[track.id];
@@ -261,11 +316,13 @@ export function GenreTrackList({
       }));
     } finally {
       setPendingId(null);
+      setPendingAction(null);
     }
   }
 
   async function clearNote(track: GenreTrackListItem) {
     setPendingId(track.id);
+    setPendingAction("note");
     try {
       const response = await fetch("/api/playlist-sort/note", {
         method: "DELETE",
@@ -284,6 +341,7 @@ export function GenreTrackList({
       }));
     } finally {
       setPendingId(null);
+      setPendingAction(null);
     }
   }
 
@@ -321,18 +379,32 @@ export function GenreTrackList({
 
             <div className="flex flex-wrap items-center gap-2">
               {track.isPlayable ? (
-                <button
-                  className="cursor-pointer rounded-full border border-black/20 bg-black/10 px-3 py-1.5 text-xs font-semibold text-black hover:bg-black/15 disabled:cursor-not-allowed disabled:opacity-60"
-                  disabled={pending}
-                  onClick={() => void playTrack(track)}
-                  type="button"
-                >
-                  {pending
-                    ? "Working…"
-                    : playingTrackId === track.id
-                      ? "Playing"
-                      : "Play"}
-                </button>
+                <>
+                  <button
+                    className="cursor-pointer rounded-full border border-black/20 bg-black/10 px-3 py-1.5 text-xs font-semibold text-black hover:bg-black/15 disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={pending}
+                    onClick={() => void playTrack(track)}
+                    type="button"
+                  >
+                    {pending && pendingAction === "play"
+                      ? "Working…"
+                      : playingTrackId === track.id
+                        ? "Playing"
+                        : "Play"}
+                  </button>
+                  <button
+                    className="cursor-pointer rounded-full border border-black/15 px-3 py-1.5 text-xs text-black/70 hover:bg-black/10 hover:text-black disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={pending}
+                    onClick={() => void queueTrack(track)}
+                    type="button"
+                  >
+                    {pending && pendingAction === "queue"
+                      ? "Queuing…"
+                      : queuedTrackId === track.id
+                        ? "Queued"
+                        : "Queue"}
+                  </button>
+                </>
               ) : (
                 <span
                   className="rounded-full border border-red-900/30 bg-red-900/10 px-3 py-1.5 text-xs text-red-950"

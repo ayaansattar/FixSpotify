@@ -31,6 +31,7 @@ export default async function RecentlyDeleted() {
           trackId: track.trackId,
           trackName: track.trackName,
           artistNames: track.artistNames,
+          trackUri: track.trackUri,
           albumImageUrl: track.albumImageUrl,
           deletedAt: track.deletedAt.toISOString(),
         }))}

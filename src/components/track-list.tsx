@@ -38,6 +38,10 @@ export function TrackList({
   const [tracks, setTracks] = useState(initialTracks);
   const [pendingTrackId, setPendingTrackId] = useState<string | null>(null);
   const [playingTrackId, setPlayingTrackId] = useState<string | null>(null);
+  const [queuedTrackId, setQueuedTrackId] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<
+    "play" | "queue" | "remove" | null
+  >(null);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [filter, setFilter] = useState("all");
   const [query, setQuery] = useState("");
@@ -48,6 +52,8 @@ export function TrackList({
     setQuery("");
     setPendingTrackId(null);
     setPlayingTrackId(null);
+    setQueuedTrackId(null);
+    setPendingAction(null);
     setNotice(null);
   }, [initialTracks]);
 
@@ -129,6 +135,7 @@ export function TrackList({
     }
 
     setPendingTrackId(track.id);
+    setPendingAction("play");
     setNotice(null);
 
     try {
@@ -157,6 +164,46 @@ export function TrackList({
       });
     } finally {
       setPendingTrackId(null);
+      setPendingAction(null);
+    }
+  }
+
+  async function queue(track: RankedTrack) {
+    if (!track.isPlayable) {
+      return;
+    }
+
+    setPendingTrackId(track.id);
+    setPendingAction("queue");
+    setNotice(null);
+
+    try {
+      const response = await fetch("/api/queue", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ trackUri: track.uri }),
+      });
+      const result = (await response.json()) as { error?: string };
+
+      if (!response.ok) {
+        throw new Error(result.error ?? "Unable to add the track to the queue.");
+      }
+
+      setQueuedTrackId(track.id);
+      setNotice({ kind: "success", text: `Queued “${track.name}”.` });
+    } catch (error) {
+      setNotice({
+        kind: "error",
+        text:
+          error instanceof Error
+            ? error.message
+            : "Unable to add the track to the queue.",
+      });
+    } finally {
+      setPendingTrackId(null);
+      setPendingAction(null);
     }
   }
 
@@ -170,6 +217,7 @@ export function TrackList({
     }
 
     setPendingTrackId(track.id);
+    setPendingAction("remove");
     setNotice(null);
 
     try {
@@ -220,6 +268,7 @@ export function TrackList({
       });
     } finally {
       setPendingTrackId(null);
+      setPendingAction(null);
     }
   }
 
@@ -302,18 +351,32 @@ export function TrackList({
             return (
               <div className="flex flex-wrap items-center gap-2">
                 {track.isPlayable ? (
-                  <button
-                    className="cursor-pointer rounded-full border border-black/20 bg-black/10 px-3 py-1 text-sm font-semibold text-black hover:bg-black/15 disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={pending}
-                    onClick={() => void play(track)}
-                    type="button"
-                  >
-                    {pending
-                      ? "Working…"
-                      : playingTrackId === track.id
-                        ? "Playing"
-                        : "Play"}
-                  </button>
+                  <>
+                    <button
+                      className="cursor-pointer rounded-full border border-black/20 bg-black/10 px-3 py-1 text-sm font-semibold text-black hover:bg-black/15 disabled:cursor-not-allowed disabled:opacity-50"
+                      disabled={pending}
+                      onClick={() => void play(track)}
+                      type="button"
+                    >
+                      {pending && pendingAction === "play"
+                        ? "Working…"
+                        : playingTrackId === track.id
+                          ? "Playing"
+                          : "Play"}
+                    </button>
+                    <button
+                      className="cursor-pointer rounded-full border border-black/15 px-3 py-1 text-sm text-black/70 hover:bg-black/10 hover:text-black disabled:cursor-not-allowed disabled:opacity-50"
+                      disabled={pending}
+                      onClick={() => void queue(track)}
+                      type="button"
+                    >
+                      {pending && pendingAction === "queue"
+                        ? "Queuing…"
+                        : queuedTrackId === track.id
+                          ? "Queued"
+                          : "Queue"}
+                    </button>
+                  </>
                 ) : (
                   <span
                     className="rounded-full border border-red-900/30 bg-red-900/10 px-3 py-1 text-sm text-red-950"
@@ -340,7 +403,7 @@ export function TrackList({
                   onClick={() => void remove(track)}
                   type="button"
                 >
-                  Remove
+                  {pending && pendingAction === "remove" ? "Removing…" : "Remove"}
                 </button>
               </div>
             );

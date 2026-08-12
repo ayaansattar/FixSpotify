@@ -46,6 +46,12 @@ export function ShufflePanel({
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ShuffleResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pendingTrackKey, setPendingTrackKey] = useState<string | null>(null);
+  const [playingTrackKey, setPlayingTrackKey] = useState<string | null>(null);
+  const [queuedTrackKey, setQueuedTrackKey] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<"play" | "queue" | null>(
+    null,
+  );
 
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const activePlaylistIds = masterMix ? selectedIds : [playlistId];
@@ -73,6 +79,66 @@ export function ShufflePanel({
       return [...current, id];
     });
     clearResult();
+  }
+
+  async function playTrack(track: ShuffledTrack) {
+    const key = `${track.position}-${track.id}`;
+    setPendingTrackKey(key);
+    setPendingAction("play");
+    setError(null);
+
+    try {
+      const response = await fetch("/api/playback", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ trackUri: track.uri }),
+      });
+      const body = (await response.json().catch(() => null)) as {
+        error?: string;
+      } | null;
+      if (!response.ok) {
+        throw new Error(body?.error ?? "Unable to start playback.");
+      }
+      setPlayingTrackKey(key);
+    } catch (error) {
+      setError(
+        error instanceof Error ? error.message : "Unable to start playback.",
+      );
+    } finally {
+      setPendingTrackKey(null);
+      setPendingAction(null);
+    }
+  }
+
+  async function queueTrack(track: ShuffledTrack) {
+    const key = `${track.position}-${track.id}`;
+    setPendingTrackKey(key);
+    setPendingAction("queue");
+    setError(null);
+
+    try {
+      const response = await fetch("/api/queue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ trackUri: track.uri }),
+      });
+      const body = (await response.json().catch(() => null)) as {
+        error?: string;
+      } | null;
+      if (!response.ok) {
+        throw new Error(body?.error ?? "Unable to add the track to the queue.");
+      }
+      setQueuedTrackKey(key);
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Unable to add the track to the queue.",
+      );
+    } finally {
+      setPendingTrackKey(null);
+      setPendingAction(null);
+    }
   }
 
   async function runShuffle(reset = false) {
@@ -334,6 +400,8 @@ export function ShufflePanel({
                 return null;
               }
 
+              const pending = pendingTrackKey === item.id;
+
               return (
                 <div className="flex flex-wrap items-center gap-3">
                   {typeof track.playCount === "number" ? (
@@ -342,6 +410,30 @@ export function ShufflePanel({
                       {track.playCount === 1 ? "play" : "plays"}
                     </span>
                   ) : null}
+                  <button
+                    className="cursor-pointer rounded-full border border-black/20 bg-black/10 px-3 py-1 text-sm font-semibold text-black hover:bg-black/15 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={pending}
+                    onClick={() => void playTrack(track)}
+                    type="button"
+                  >
+                    {pending && pendingAction === "play"
+                      ? "Working…"
+                      : playingTrackKey === item.id
+                        ? "Playing"
+                        : "Play"}
+                  </button>
+                  <button
+                    className="cursor-pointer rounded-full border border-black/15 px-3 py-1 text-sm text-black/70 hover:bg-black/10 hover:text-black disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={pending}
+                    onClick={() => void queueTrack(track)}
+                    type="button"
+                  >
+                    {pending && pendingAction === "queue"
+                      ? "Queuing…"
+                      : queuedTrackKey === item.id
+                        ? "Queued"
+                        : "Queue"}
+                  </button>
                   <a
                     className="rounded-full border border-black/15 px-3 py-1 text-sm text-black/70 hover:bg-black/10 hover:text-black"
                     href={`https://open.spotify.com/track/${track.id}`}
