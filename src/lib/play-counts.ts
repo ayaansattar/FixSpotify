@@ -87,8 +87,9 @@ export async function getPlayCounts(
   // Soft-title aliases. Include other playlist track IDs too, so
   // "Take on Me" and "Take on Me - MTV Unplugged" on the same playlist share
   // play history when their soft titles match. Viral edits
-  // ("Drive Forever (Slowed + Reverb)", "Driver Forever - Remix") also merge
-  // when the soft title is distinctive enough, even if upload artists differ.
+  // ("Drive Forever (Slowed + Reverb)") also merge when the soft title is
+  // distinctive enough, even if upload artists differ. Remixes and
+  // instrumentals keep distinct soft keys from the original vocal.
   //
   // Aggregate by trackId first: artist backfills can split one ID across
   // several groupBy rows; matching only the first row undercounted the rest.
@@ -353,8 +354,9 @@ function normalizeTitle(name: string) {
 /**
  * Soft title key used for alias matching. Strips remaster / live / unplugged /
  * featuring tags, soundtrack "From …" suffixes, and common viral-edit labels
- * (slowed/reverb/sped up/remix) so alternate uploads of the same song share
- * play history.
+ * (slowed/reverb/sped up) so alternate uploads of the same song share
+ * play history. Remix / instrumental markers are intentionally kept so those
+ * stay separate from the original vocal.
  */
 function softNormalizeTitle(name: string) {
   const withoutSoundtrack = name
@@ -363,7 +365,15 @@ function softNormalizeTitle(name: string) {
     // "Woh Lamhe Woh Baatein - From "Zeher""
     .replace(/\s*[-\u2013\u2014]\s*from\b.*$/gi, " ")
     // "Kalabaaz Dil from 'Lahore Se Aagey'"
-    .replace(/\s+from\s+['\u2018\u2019\u201c\u201d"].*$/gi, " ");
+    .replace(/\s+from\s+['\u2018\u2019\u201c\u201d"].*$/gi, " ")
+    // Featured-artist clauses (order varies across Spotify IDs).
+    // "Girls (feat. Cardi B, Bebe Rexha & Charli XCX)"
+    .replace(/\([^)]*\bfeat(?:uring)?\.?[^)]*\)/gi, " ")
+    .replace(/\([^)]*\bft\.?[^)]*\)/gi, " ")
+    .replace(/\s*[-\u2013\u2014]\s*feat(?:uring)?\.?\s+.+$/gi, " ")
+    .replace(/\s*[-\u2013\u2014]\s*ft\.?\s+.+$/gi, " ")
+    .replace(/\s+feat(?:uring)?\.?\s+.+$/gi, " ")
+    .replace(/\s+ft\.?\s+.+$/gi, " ");
 
   return normalizeTitle(withoutSoundtrack)
     .replace(
@@ -375,11 +385,12 @@ function softNormalizeTitle(name: string) {
 }
 
 /** Alias key that also collapses viral edit suffixes, remaster years, and
- *  common release qualifiers (single / album / original version). */
+ *  common release qualifiers (single / album / original version).
+ *  Does not strip remix / instrumental — those stay distinct recordings. */
 function softTitleKey(name: string) {
   return softNormalizeTitle(name)
     .replace(
-      /\b(slowed(?:\s*down)?|reverb|sped\s*up|speed\s*up|nightcore|remix(?:ed)?|bootleg|tik\s*tok|viral|edit|mix|version)\b/gu,
+      /\b(slowed(?:\s*down)?|reverb|sped\s*up|speed\s*up|nightcore|bootleg|tik\s*tok|viral|edit|version)\b/gu,
       " ",
     )
     // "Personal Jesus - Original Single Version" vs "Personal Jesus - Single Version"
