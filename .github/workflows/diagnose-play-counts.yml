@@ -1,0 +1,106 @@
+name: Diagnose play counts
+
+on:
+  workflow_dispatch:
+    inputs:
+      query:
+        description: "Substring to match in track names (case-insensitive)"
+        required: true
+        default: "Dai Dai"
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate secrets
+        run: |
+          missing=0
+          [ -z "${{ secrets.SSH_HOST }}" ] && echo "::error::SSH_HOST secret is empty or missing" && missing=1
+          [ -z "${{ secrets.SSH_USER }}" ] && echo "::error::SSH_USER secret is empty or missing" && missing=1
+          [ -z "${{ secrets.SSH_PRIVATE_KEY }}" ] && echo "::error::SSH_PRIVATE_KEY secret is empty or missing" && missing=1
+          exit $missing
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Query production DB
+        env:
+          QUERY: ${{ inputs.query }}
+        run: |
+          # Pass query as a single argv to the remote script to avoid injection/quoting issues.
+          ssh -i ~/.ssh/deploy_key "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" \
+            "QUERY=$(printf %q "$QUERY") bash -s" <<'EOF'
+          set -euo pipefail
+          cd ~/FixSpotify
+
+          docker compose --env-file .env.production exec -T -e QUERY="$QUERY" app node --input-type=module <<'NODE'
+          import Database from "better-sqlite3";
+
+          const db = new Database("/app/data/prod.db", { readonly: true });
+          const query = process.env.QUERY || "Dai Dai";
+          const like = `%${query}%`;
+
+          console.log("QUERY", query);
+
+          const caches = db.prepare("SELECT playlistId, tracks FROM PlaylistTrackCache").all();
+          const playlistHits = [];
+
+          for (const row of caches) {
+            let tracks;
+            try {
+              tracks = JSON.parse(row.tracks);
+            } catch {
+              continue;
+            }
+            for (const t of tracks) {
+              const name = String(t.name || "");
+              if (name.toLowerCase().includes(query.toLowerCase())) {
+                playlistHits.push({
+                  playlistId: row.playlistId,
+                  id: t.id,
+                  name,
+                  artists: (t.artists || []).map((a) => a.name).join(", "),
+                  artistIds: (t.artists || []).map((a) => a.id),
+                });
+              }
+            }
+          }
+
+          console.log("PLAYLIST_HITS", JSON.stringify(playlistHits, null, 2));
+
+          const playGroups = db
+            .prepare(`
+              SELECT trackId, trackName, artistName, COUNT(*) AS n,
+                     MIN(playedAt) AS firstPlay, MAX(playedAt) AS lastPlay
+              FROM Play
+              WHERE trackName LIKE ? COLLATE NOCASE
+              GROUP BY trackId, trackName, artistName
+              ORDER BY n DESC
+            `)
+            .all(like);
+
+          console.log("PLAY_GROUPS", JSON.stringify(playGroups, null, 2));
+
+          for (const hit of playlistHits) {
+            const exact = db
+              .prepare("SELECT COUNT(*) AS n FROM Play WHERE trackId = ?")
+              .get(hit.id);
+            console.log("EXACT_ID", hit.id, "|", hit.name, "|", exact.n);
+          }
+
+          const newest = db
+            .prepare(
+              "SELECT playedAt, trackName, trackId FROM Play ORDER BY playedAt DESC LIMIT 1",
+            )
+            .get();
+          console.log("NEWEST_PLAY", JSON.stringify(newest));
+          console.log(
+            "TOTAL_PLAYS",
+            db.prepare("SELECT COUNT(*) AS n FROM Play").get().n,
+          );
+          NODE
+          EOF
