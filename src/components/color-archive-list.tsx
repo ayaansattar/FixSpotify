@@ -61,6 +61,7 @@ export function ColorArchiveList({
   /** Title rows only — exclude the expanding action panel from focus math. */
   const rowRefs = useRef<Array<HTMLElement | null>>([]);
   const activeIndexRef = useRef<number | null>(null);
+  const activeIdRef = useRef<string | null>(null);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewVisible, setPreviewVisible] = useState(false);
@@ -125,13 +126,21 @@ export function ColorArchiveList({
     return () => window.clearTimeout(timeout);
   }, [activeImageUrl]);
 
-  const commitActiveIndex = useCallback((next: number | null) => {
-    if (activeIndexRef.current === next) {
-      return;
-    }
-    activeIndexRef.current = next;
-    setActiveIndex(next);
-  }, []);
+  const commitActiveIndex = useCallback(
+    (next: number | null) => {
+      const nextId = next === null ? null : (items[next]?.id ?? null);
+      if (
+        activeIndexRef.current === next &&
+        activeIdRef.current === nextId
+      ) {
+        return;
+      }
+      activeIndexRef.current = next;
+      activeIdRef.current = nextId;
+      setActiveIndex(next);
+    },
+    [items],
+  );
 
   const updateActiveFromScroll = useCallback(() => {
     if (items.length === 0) {
@@ -204,14 +213,56 @@ export function ColorArchiveList({
 
   useEffect(() => {
     rowRefs.current = rowRefs.current.slice(0, items.length);
-    activeIndexRef.current = null;
-    setActiveIndex(null);
-    setPreviewVisible(false);
-    setPreviewUrl(null);
+
+    const previousId = activeIdRef.current;
+    const previousIndex = activeIndexRef.current;
+    let nextIndex: number | null = null;
+
+    if (previousId) {
+      const byId = items.findIndex((item) => item.id === previousId);
+      if (byId >= 0) {
+        // Same track still present (filters / reorder).
+        nextIndex = byId;
+      } else if (previousIndex !== null && items.length > 0) {
+        // Focused track was removed — the song that slid into its slot.
+        nextIndex = Math.min(previousIndex, items.length - 1);
+      }
+    }
+
+    if (nextIndex !== null) {
+      commitActiveIndex(nextIndex);
+    } else {
+      commitActiveIndex(null);
+      setPreviewVisible(false);
+      setPreviewUrl(null);
+    }
+
     setPreviewOffset({ x: 0, y: 0 });
-    const frame = requestAnimationFrame(updateActiveFromScroll);
-    return () => cancelAnimationFrame(frame);
-  }, [items, updateActiveFromScroll]);
+
+    let cancelled = false;
+    const remasure = () => {
+      if (!cancelled) {
+        updateActiveFromScroll();
+      }
+    };
+
+    // List height changes when the action panel collapses; remeasure after
+    // layout settles so the cover attaches to the newly visible song.
+    remasure();
+    let frame2 = 0;
+    const frame1 = requestAnimationFrame(() => {
+      remasure();
+      frame2 = requestAnimationFrame(remasure);
+    });
+    const timeout = window.setTimeout(remasure, 80);
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frame1);
+      cancelAnimationFrame(frame2);
+      window.clearTimeout(timeout);
+    };
+  }, [items, commitActiveIndex, updateActiveFromScroll]);
 
   useEffect(() => {
     const onScroll = () => updateActiveFromScroll();
