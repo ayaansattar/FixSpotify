@@ -67,8 +67,16 @@ jobs:
               .replace(/\s+/g, " ")
               .trim();
           }
+          function canonicalizeMashupKey(key) {
+            const parts = key
+              .split(/\bx\b/g)
+              .map((part) => part.trim())
+              .filter(Boolean);
+            if (parts.length < 2) return key;
+            return [...parts].sort((a, b) => a.localeCompare(b)).join(" x ");
+          }
           function softTitleKey(name) {
-            return softNormalizeTitle(name)
+            const key = softNormalizeTitle(name)
               .replace(
                 /\b(slowed(?:\s*down)?|reverb|sped\s*up|speed\s*up|nightcore|remix(?:ed)?|bootleg|tik\s*tok|viral|edit|mix|version)\b/gu,
                 " ",
@@ -77,6 +85,7 @@ jobs:
               .replace(/\b((?:19|20)\d{2})\b/g, " ")
               .replace(/\s+/g, " ")
               .trim();
+            return canonicalizeMashupKey(key);
           }
           function softNormalizeArtist(name) {
             return normalizeTitle(name)

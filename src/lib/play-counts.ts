@@ -29,8 +29,9 @@ type AggregatedPlay = {
  * recording across locales/releases (e.g. Arabic "قيام" vs Latin "Qeiam"), so
  * counting by playlist track ID alone undercounts. Matching order:
  * 1) exact track ID
- * 2) soft title (edit/remix suffixes stripped; close typos allowed) + artist,
- *    or title alone when the soft title is distinctive enough for viral edits
+ * 2) soft title (edit/remix suffixes stripped; mashup "A x B" / "B x A"
+ *    treated as the same; close typos allowed) + artist, or title alone
+ *    when the soft title is distinctive enough for viral edits
  * 3) shared ISRC (when an access token is provided)
  */
 export async function getPlayCounts(
@@ -88,8 +89,9 @@ export async function getPlayCounts(
   // "Take on Me" and "Take on Me - MTV Unplugged" on the same playlist share
   // play history when their soft titles match. Viral edits
   // ("Drive Forever (Slowed + Reverb)") also merge when the soft title is
-  // distinctive enough, even if upload artists differ. Remixes and
-  // instrumentals keep distinct soft keys from the original vocal.
+  // distinctive enough, even if upload artists differ. Mashups named
+  // "I'll Do It x Ayesha" vs "Ayesha X i'll do it" share a canonical key.
+  // Remixes and instrumentals keep distinct soft keys from the original vocal.
   //
   // Aggregate by trackId first: artist backfills can split one ID across
   // several groupBy rows; matching only the first row undercounted the rest.
@@ -389,9 +391,10 @@ function softNormalizeTitle(name: string) {
 
 /** Alias key that also collapses viral edit suffixes, remaster years, and
  *  common release qualifiers (single / album / original version).
- *  Does not strip remix / instrumental — those stay distinct recordings. */
+ *  Mashup halves around a standalone "x" are sorted so "A x B" and "B x A"
+ *  share a key. Does not strip remix / instrumental — those stay distinct. */
 function softTitleKey(name: string) {
-  return softNormalizeTitle(name)
+  const key = softNormalizeTitle(name)
     .replace(
       /\b(slowed(?:\s*down)?|reverb|sped\s*up|speed\s*up|nightcore|bootleg|tik\s*tok|viral|edit|version)\b/gu,
       " ",
@@ -402,6 +405,22 @@ function softTitleKey(name: string) {
     .replace(/\b((?:19|20)\d{2})\b/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+
+  return canonicalizeMashupKey(key);
+}
+
+/** "I'll Do It x Ayesha" and "Ayesha X i'll do it" → "ayesha x i ll do it". */
+function canonicalizeMashupKey(key: string) {
+  const parts = key
+    .split(/\bx\b/g)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (parts.length < 2) {
+    return key;
+  }
+
+  return [...parts].sort((a, b) => a.localeCompare(b)).join(" x ");
 }
 
 function isDistinctiveTitle(key: string) {
