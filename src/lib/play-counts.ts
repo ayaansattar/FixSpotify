@@ -30,8 +30,10 @@ type AggregatedPlay = {
  * counting by playlist track ID alone undercounts. Matching order:
  * 1) exact track ID
  * 2) soft title (edit/remix suffixes stripped; mashup "A x B" / "B x A"
- *    treated as the same; close typos allowed) + artist, or title alone
- *    when the soft title is distinctive enough for viral edits
+ *    treated as the same; shorter titles contained in longer ones, e.g.
+ *    "Humsafar" inside "Wo Humsafar Tha"; close typos allowed) + artist
+ *    (including initials like "QB" for "Quratulain Balouch"), or title
+ *    alone when the soft title is distinctive enough for viral edits
  * 3) shared ISRC (when an access token is provided)
  */
 export async function getPlayCounts(
@@ -338,7 +340,8 @@ function artistsMatch(
     return (
       playlistArtist === playArtist ||
       playlistArtist.includes(playArtist) ||
-      playArtist.includes(playlistArtist)
+      playArtist.includes(playlistArtist) ||
+      artistInitialsMatch(playArtist, playlistArtist)
     );
   });
 }
@@ -435,10 +438,73 @@ function titlesLooselyMatch(a: string, b: string) {
   if (a === b) {
     return true;
   }
+  // "Humsafar" vs "Wo Humsafar Tha". Artist still has to match unless
+  // the playlist title is distinctive on its own.
+  if (titleTokensContained(a, b) || titleTokensContained(b, a)) {
+    return true;
+  }
   if (Math.min(a.length, b.length) < 10) {
     return false;
   }
   return levenshtein(a, b) <= 1;
+}
+
+/** True when every token of `needle` appears as a contiguous run in `haystack`. */
+function titleTokensContained(needle: string, haystack: string) {
+  if (needle.length < 8) {
+    return false;
+  }
+
+  const needleTokens = needle.split(" ").filter(Boolean);
+  const haystackTokens = haystack.split(" ").filter(Boolean);
+
+  if (
+    needleTokens.length === 0 ||
+    needleTokens.length >= haystackTokens.length
+  ) {
+    return false;
+  }
+
+  for (let i = 0; i <= haystackTokens.length - needleTokens.length; i += 1) {
+    if (needleTokens.every((token, j) => haystackTokens[i + j] === token)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * "QB" matches "Quratulain Balouch": a 2–4 letter name vs initials of a
+ * longer multi-word name. Each expanded word must be 5+ letters so short
+ * stage names like "KK" do not match "Kailash Kher".
+ */
+function artistInitialsMatch(a: string, b: string) {
+  const compactA = compactArtistInitials(a);
+  const compactB = compactArtistInitials(b);
+  const expandedA = expandedArtistInitials(a);
+  const expandedB = expandedArtistInitials(b);
+
+  return Boolean(
+    (compactA && expandedB && compactA === expandedB) ||
+      (compactB && expandedA && compactB === expandedA),
+  );
+}
+
+function compactArtistInitials(name: string) {
+  const tokens = name.split(" ").filter(Boolean);
+  if (tokens.length === 1 && /^[a-z]{2,4}$/.test(tokens[0]!)) {
+    return tokens[0];
+  }
+  return null;
+}
+
+function expandedArtistInitials(name: string) {
+  const tokens = name.split(" ").filter(Boolean);
+  if (tokens.length < 2 || tokens.some((token) => token.length < 5)) {
+    return null;
+  }
+  return tokens.map((token) => token[0]).join("");
 }
 
 function levenshtein(a: string, b: string) {

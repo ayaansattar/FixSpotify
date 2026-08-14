@@ -105,7 +105,8 @@ jobs:
               return (
                 playlistArtist === playArtist ||
                 playlistArtist.includes(playArtist) ||
-                playArtist.includes(playlistArtist)
+                playArtist.includes(playlistArtist) ||
+                artistInitialsMatch(playArtist, playlistArtist)
               );
             });
           }
@@ -113,9 +114,40 @@ jobs:
             const tokens = key.split(" ").filter(Boolean);
             return key.length >= 12 && tokens.length >= 2;
           }
+          function compactArtistInitials(name) {
+            const tokens = name.split(" ").filter(Boolean);
+            if (tokens.length === 1 && /^[a-z]{2,4}$/.test(tokens[0])) return tokens[0];
+            return null;
+          }
+          function expandedArtistInitials(name) {
+            const tokens = name.split(" ").filter(Boolean);
+            if (tokens.length < 2 || tokens.some((t) => t.length < 5)) return null;
+            return tokens.map((t) => t[0]).join("");
+          }
+          function artistInitialsMatch(a, b) {
+            const compactA = compactArtistInitials(a);
+            const compactB = compactArtistInitials(b);
+            const expandedA = expandedArtistInitials(a);
+            const expandedB = expandedArtistInitials(b);
+            return Boolean(
+              (compactA && expandedB && compactA === expandedB) ||
+                (compactB && expandedA && compactB === expandedA),
+            );
+          }
+          function titleTokensContained(needle, haystack) {
+            if (needle.length < 8) return false;
+            const n = needle.split(" ").filter(Boolean);
+            const h = haystack.split(" ").filter(Boolean);
+            if (!n.length || n.length >= h.length) return false;
+            for (let i = 0; i <= h.length - n.length; i++) {
+              if (n.every((tok, j) => h[i + j] === tok)) return true;
+            }
+            return false;
+          }
           function titlesLooselyMatch(a, b) {
             if (!a || !b) return false;
             if (a === b) return true;
+            if (titleTokensContained(a, b) || titleTokensContained(b, a)) return true;
             if (Math.min(a.length, b.length) < 10) return false;
             if (Math.abs(a.length - b.length) > 1) return false;
             // cheap levenshtein <= 1
