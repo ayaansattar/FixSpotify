@@ -36,7 +36,10 @@ type AggregatedPlay = {
  *    for "Quratulain Balouch"). Identical titles still need aligned
  *    artist lists so covers stay split and a remix with a new lead
  *    (Rivo vs Armin) does not eat the original. Same people in any
- *    order still match. A distinctive title may skip artist only for
+ *    order still match. A "(with Guest)" title still matches the
+ *    short title only when that guest is credited on both versions
+ *    (luther + SZA); Calm Down stays split because Selena is only
+ *    on the duet. A distinctive title may skip artist only for
  *    wrapped/typo aliases. Remix, burnt, and similar arrangement labels stay.
  * 3) shared ISRC (when an access token is provided)
  */
@@ -50,6 +53,19 @@ export async function getPlayCounts(
   const chunkSize = 500;
   const trackIds = tracks.map((track) => track.id);
   const playlistIdSet = new Set(trackIds);
+  const artistNamesById = new Map(
+    tracks.map((track) => [track.id, track.artistNames] as const),
+  );
+  const metaArtistsById = new Map<string, string[]>();
+  const metaRows = await db.trackMeta.findMany({
+    select: { trackId: true, artistName: true },
+  });
+  for (const row of metaRows) {
+    const names = splitArtistCredits(row.artistName);
+    if (names.length > 0) {
+      metaArtistsById.set(row.trackId, names);
+    }
+  }
 
   for (const track of tracks) {
     countedPlayIds.set(track.id, new Set([track.id]));
@@ -102,6 +118,8 @@ export async function getPlayCounts(
   // ("I Like the Way You Kiss Me - burnt"). Identical titles still
   // require aligned artist lists: same people in any order count
   // together; a new lead artist (Rivo remix vs Armin original) does not.
+  // A "(with Guest)" title matches the short title only when that guest
+  // is credited on both versions.
   //
   // Aggregate by trackId first: artist backfills can split one ID across
   // several groupBy rows; matching only the first row undercounted the rest.
@@ -141,11 +159,35 @@ export async function getPlayCounts(
           continue;
         }
 
-        const artistOk = candidate.variants.some((variant) =>
-          matchedKey === key
-            ? artistsMatchSameTitle(variant, track.artistIds, track.artistNames)
-            : artistsMatch(variant, track.artistIds, track.artistNames),
+        const playCredits = creditsForPlay(
+          candidate.trackId,
+          candidate.variants.find((variant) => variant.artistName)?.artistName ??
+            "",
+          artistNamesById,
+          metaArtistsById,
         );
+        const guestOk =
+          matchedKey !== key ||
+          featuredGuestsAlign(
+            track.name,
+            track.artistNames,
+            candidate.trackName,
+            playCredits.names,
+            playCredits.complete,
+          );
+        const artistOk =
+          guestOk &&
+          candidate.variants.some((variant) =>
+            matchedKey === key
+              ? artistsMatchSameTitle(
+                  variant,
+                  track.artistIds,
+                  track.artistNames,
+                  playCredits.names,
+                  playCredits.complete,
+                )
+              : artistsMatch(variant, track.artistIds, track.artistNames),
+          );
         // Exact titles: covers and remixes with a new lead stay split.
         // Distinctive-title bypass is only for wrapped/typo aliases.
         if (!artistOk && (matchedKey === key || !isDistinctiveTitle(key))) {
@@ -347,6 +389,25 @@ function artistsMatch(
   );
 }
 
+function creditsForPlay(
+  trackId: string,
+  fallbackName: string,
+  artistNamesById: Map<string, string[]>,
+  metaArtistsById: Map<string, string[]>,
+) {
+  const playlist = artistNamesById.get(trackId);
+  if (playlist && playlist.length > 0) {
+    return { names: playlist, complete: true };
+  }
+
+  const meta = metaArtistsById.get(trackId);
+  if (meta && meta.length > 0) {
+    return { names: meta, complete: true };
+  }
+
+  return { names: splitArtistCredits(fallbackName), complete: false };
+}
+
 /**
  * Same-title matching. Same credited people in any order still count as
  * one recording. A remix that adds a new lead (Rivo on an Armin song)
@@ -356,9 +417,13 @@ function artistsMatchSameTitle(
   play: { artistId: string; artistName: string },
   artistIds: string[],
   artistNames: string[],
+  playArtistNames?: string[],
+  completePlayCredits?: boolean,
 ) {
   const playlist = artistNames.map(softNormalizeArtist).filter(Boolean);
-  const played = splitArtistCredits(play.artistName);
+  const played = (playArtistNames ?? splitArtistCredits(play.artistName))
+    .map(softNormalizeArtist)
+    .filter(Boolean);
 
   if (playlist.length === 0 || played.length === 0) {
     return Boolean(
@@ -377,6 +442,12 @@ function artistsMatchSameTitle(
     played.every((name) => artistInList(name, playlist));
   if (samePeople) {
     return true;
+  }
+
+  // Full Spotify credits for both rows: extra guest = different recording
+  // ("Calm Down" vs "Calm Down (with Selena Gomez)").
+  if (completePlayCredits) {
+    return false;
   }
 
   // Leads are on each other's full lists: order swapped, same group.
@@ -399,6 +470,92 @@ function artistsMatchSameTitle(
   }
 
   return false;
+}
+
+/**
+ * "luther (with sza)" vs "luther": same song when SZA is on both versions
+ * (title or credits). "Calm Down (with Selena Gomez)" vs "Calm Down":
+ * Selena is only on the duet, so they stay split.
+ */
+function featuredGuestsAlign(
+  playlistTitle: string,
+  playlistArtists: string[],
+  playTitle: string,
+  playArtists: string[],
+  playCreditsComplete: boolean,
+) {
+  const guests = [
+    ...featuredGuestsFromTitle(playlistTitle),
+    ...featuredGuestsFromTitle(playTitle),
+  ];
+  const seen = new Set<string>();
+
+  for (const guest of guests) {
+    if (seen.has(guest)) {
+      continue;
+    }
+    seen.add(guest);
+
+    const onPlaylist = versionHasGuest(
+      guest,
+      playlistArtists,
+      playlistTitle,
+      true,
+    );
+    const onPlay = versionHasGuest(
+      guest,
+      playArtists,
+      playTitle,
+      playCreditsComplete,
+    );
+    if (onPlaylist !== onPlay) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function featuredGuestsFromTitle(name: string) {
+  const guests: string[] = [];
+  const patterns = [
+    /\((?:with|feat(?:uring)?|ft)\.?\s*([^)]*)\)/gi,
+    /[-\u2013\u2014]\s*(?:with|feat(?:uring)?|ft)\.?\s+(.+)$/gi,
+  ];
+
+  for (const pattern of patterns) {
+    for (const match of name.matchAll(pattern)) {
+      for (const part of (match[1] ?? "").split(/,|&|\band\b/i)) {
+        const normalized = softNormalizeArtist(part);
+        if (normalized) {
+          guests.push(normalized);
+        }
+      }
+    }
+  }
+
+  return guests;
+}
+
+function versionHasGuest(
+  guest: string,
+  artistNames: string[],
+  title: string,
+  creditsComplete: boolean,
+) {
+  const credits = artistNames.map(softNormalizeArtist).filter(Boolean);
+  if (artistInList(guest, credits)) {
+    return true;
+  }
+  // Full Spotify credits: the title tag is not enough. "luther (with sza)"
+  // still matches plain "luther" because SZA is on both artist lists.
+  // "Calm Down (with Selena Gomez)" does not match Rema-only "Calm Down".
+  if (creditsComplete) {
+    return false;
+  }
+  return featuredGuestsFromTitle(title).some((name) =>
+    artistNamesMatch(name, guest),
+  );
 }
 
 function splitArtistCredits(name: string) {
