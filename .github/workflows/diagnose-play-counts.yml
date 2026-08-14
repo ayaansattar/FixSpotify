@@ -96,16 +96,39 @@ jobs:
             }
             const playArtist = softNormalizeArtist(play.artistName);
             if (!playArtist) return false;
-            return artistNames.some((name) => {
-              const playlistArtist = softNormalizeArtist(name);
-              if (!playlistArtist) return false;
-              return (
-                playlistArtist === playArtist ||
-                playlistArtist.includes(playArtist) ||
-                playArtist.includes(playlistArtist) ||
-                artistInitialsMatch(playArtist, playlistArtist)
+            return artistNames.some((name) =>
+              artistNamesMatch(playArtist, softNormalizeArtist(name)),
+            );
+          }
+          function splitArtistCredits(name) {
+            return name.split(",").map((part) => softNormalizeArtist(part)).filter(Boolean);
+          }
+          function artistNamesMatch(a, b) {
+            if (!a || !b) return false;
+            return a === b || a.includes(b) || b.includes(a) || artistInitialsMatch(a, b);
+          }
+          function artistInList(name, list) {
+            return list.some((item) => artistNamesMatch(name, item));
+          }
+          function artistsMatchSameTitle(play, artistIds, artistNames) {
+            const playlist = artistNames.map(softNormalizeArtist).filter(Boolean);
+            const played = splitArtistCredits(play.artistName);
+            if (playlist.length === 0 || played.length === 0) {
+              return Boolean(
+                play.artistId && play.artistId !== "unknown" && artistIds[0] === play.artistId,
               );
-            });
+            }
+            const playlistLead = playlist[0];
+            const playLead = played[0];
+            const samePeople =
+              playlist.length === played.length &&
+              playlist.every((name) => artistInList(name, played)) &&
+              played.every((name) => artistInList(name, playlist));
+            if (samePeople) return true;
+            if (artistInList(playLead, playlist) && artistInList(playlistLead, played)) return true;
+            if (played.length === 1 && artistNamesMatch(playLead, playlistLead)) return true;
+            if (playlist.length === 1 && artistNamesMatch(playlistLead, playLead)) return true;
+            return false;
           }
           function isDistinctiveTitle(key) {
             const tokens = key.split(" ").filter(Boolean);
@@ -228,7 +251,9 @@ jobs:
               for (const candidate of aliasBuckets.get(candidateKey) ?? []) {
                 if (counted.has(candidate.trackId)) continue;
                 const artistOk = candidate.variants.some((v) =>
-                  artistsMatch(v, track.artistIds, track.artistNames),
+                  candidateKey === key
+                    ? artistsMatchSameTitle(v, track.artistIds, track.artistNames)
+                    : artistsMatch(v, track.artistIds, track.artistNames),
                 );
                 if (!artistOk && (candidateKey === key || !isDistinctiveTitle(key))) continue;
                 counted.add(candidate.trackId);

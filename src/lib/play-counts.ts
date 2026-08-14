@@ -33,10 +33,11 @@ type AggregatedPlay = {
  *    treated as the same; a shorter title may match inside a longer one
  *    only when extra words wrap it, e.g. "Humsafar" inside "Wo Humsafar
  *    Tha"; close typos allowed) + artist (including initials like "QB"
- *    for "Quratulain Balouch"). Identical titles still need an artist
- *    match so covers stay split (INXS vs Paloma Faith). A distinctive
- *    title may skip artist only for wrapped/typo aliases. Remix, burnt,
- *    and similar arrangement labels stay.
+ *    for "Quratulain Balouch"). Identical titles still need aligned
+ *    artist lists so covers stay split and a remix with a new lead
+ *    (Rivo vs Armin) does not eat the original. Same people in any
+ *    order still match. A distinctive title may skip artist only for
+ *    wrapped/typo aliases. Remix, burnt, and similar arrangement labels stay.
  * 3) shared ISRC (when an access token is provided)
  */
 export async function getPlayCounts(
@@ -99,7 +100,8 @@ export async function getPlayCounts(
   // longer one when it is wrapped by extra words ("Humsafar" inside
   // "Wo Humsafar Tha"), not when the extra words are a trailing version
   // ("I Like the Way You Kiss Me - burnt"). Identical titles still
-  // require an artist match so covers (INXS vs Paloma Faith) stay split.
+  // require aligned artist lists: same people in any order count
+  // together; a new lead artist (Rivo remix vs Armin original) does not.
   //
   // Aggregate by trackId first: artist backfills can split one ID across
   // several groupBy rows; matching only the first row undercounted the rest.
@@ -140,10 +142,12 @@ export async function getPlayCounts(
         }
 
         const artistOk = candidate.variants.some((variant) =>
-          artistsMatch(variant, track.artistIds, track.artistNames),
+          matchedKey === key
+            ? artistsMatchSameTitle(variant, track.artistIds, track.artistNames)
+            : artistsMatch(variant, track.artistIds, track.artistNames),
         );
-        // Same title + different artist is a cover. Distinctive-title
-        // bypass is only for wrapped/typo aliases, not exact keys.
+        // Exact titles: covers and remixes with a new lead stay split.
+        // Distinctive-title bypass is only for wrapped/typo aliases.
         if (!artistOk && (matchedKey === key || !isDistinctiveTitle(key))) {
           continue;
         }
@@ -338,20 +342,87 @@ function artistsMatch(
     return false;
   }
 
-  return artistNames.some((name) => {
-    const playlistArtist = softNormalizeArtist(name);
+  return artistNames.some((name) =>
+    artistNamesMatch(playArtist, softNormalizeArtist(name)),
+  );
+}
 
-    if (!playlistArtist) {
-      return false;
-    }
+/**
+ * Same-title matching. Same credited people in any order still count as
+ * one recording. A remix that adds a new lead (Rivo on an Armin song)
+ * does not, even if the original artist is featured on the remix.
+ */
+function artistsMatchSameTitle(
+  play: { artistId: string; artistName: string },
+  artistIds: string[],
+  artistNames: string[],
+) {
+  const playlist = artistNames.map(softNormalizeArtist).filter(Boolean);
+  const played = splitArtistCredits(play.artistName);
 
-    return (
-      playlistArtist === playArtist ||
-      playlistArtist.includes(playArtist) ||
-      playArtist.includes(playlistArtist) ||
-      artistInitialsMatch(playArtist, playlistArtist)
+  if (playlist.length === 0 || played.length === 0) {
+    return Boolean(
+      play.artistId &&
+        play.artistId !== "unknown" &&
+        artistIds[0] === play.artistId,
     );
-  });
+  }
+
+  const playlistLead = playlist[0]!;
+  const playLead = played[0]!;
+
+  const samePeople =
+    playlist.length === played.length &&
+    playlist.every((name) => artistInList(name, played)) &&
+    played.every((name) => artistInList(name, playlist));
+  if (samePeople) {
+    return true;
+  }
+
+  // Leads are on each other's full lists: order swapped, same group.
+  if (
+    artistInList(playLead, playlist) &&
+    artistInList(playlistLead, played)
+  ) {
+    return true;
+  }
+
+  // Sparse play history often stores only one name. Count it with the
+  // playlist only when that name is the playlist lead, not a featured
+  // artist on a remix.
+  if (played.length === 1 && artistNamesMatch(playLead, playlistLead)) {
+    return true;
+  }
+
+  if (playlist.length === 1 && artistNamesMatch(playlistLead, playLead)) {
+    return true;
+  }
+
+  return false;
+}
+
+function splitArtistCredits(name: string) {
+  return name
+    .split(",")
+    .map((part) => softNormalizeArtist(part))
+    .filter(Boolean);
+}
+
+function artistInList(name: string, list: string[]) {
+  return list.some((item) => artistNamesMatch(name, item));
+}
+
+function artistNamesMatch(a: string, b: string) {
+  if (!a || !b) {
+    return false;
+  }
+
+  return (
+    a === b ||
+    a.includes(b) ||
+    b.includes(a) ||
+    artistInitialsMatch(a, b)
+  );
 }
 
 /** Keep letters from any script; strip punctuation and collapse whitespace. */
