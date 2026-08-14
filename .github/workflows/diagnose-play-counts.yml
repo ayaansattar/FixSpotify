@@ -230,7 +230,7 @@ jobs:
                 const artistOk = candidate.variants.some((v) =>
                   artistsMatch(v, track.artistIds, track.artistNames),
                 );
-                if (!artistOk && !isDistinctiveTitle(key)) continue;
+                if (!artistOk && (candidateKey === key || !isDistinctiveTitle(key))) continue;
                 counted.add(candidate.trackId);
                 count += candidate.count;
               }

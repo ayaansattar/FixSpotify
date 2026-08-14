@@ -33,8 +33,10 @@ type AggregatedPlay = {
  *    treated as the same; a shorter title may match inside a longer one
  *    only when extra words wrap it, e.g. "Humsafar" inside "Wo Humsafar
  *    Tha"; close typos allowed) + artist (including initials like "QB"
- *    for "Quratulain Balouch"), or title alone when the soft title is
- *    distinctive enough. Remix, burnt, and similar arrangement labels stay.
+ *    for "Quratulain Balouch"). Identical titles still need an artist
+ *    match so covers stay split (INXS vs Paloma Faith). A distinctive
+ *    title may skip artist only for wrapped/typo aliases. Remix, burnt,
+ *    and similar arrangement labels stay.
  * 3) shared ISRC (when an access token is provided)
  */
 export async function getPlayCounts(
@@ -96,7 +98,8 @@ export async function getPlayCounts(
   // from the original vocal. A shorter title may only match inside a
   // longer one when it is wrapped by extra words ("Humsafar" inside
   // "Wo Humsafar Tha"), not when the extra words are a trailing version
-  // ("I Like the Way You Kiss Me - burnt").
+  // ("I Like the Way You Kiss Me - burnt"). Identical titles still
+  // require an artist match so covers (INXS vs Paloma Faith) stay split.
   //
   // Aggregate by trackId first: artist backfills can split one ID across
   // several groupBy rows; matching only the first row undercounted the rest.
@@ -139,7 +142,9 @@ export async function getPlayCounts(
         const artistOk = candidate.variants.some((variant) =>
           artistsMatch(variant, track.artistIds, track.artistNames),
         );
-        if (!artistOk && !isDistinctiveTitle(key)) {
+        // Same title + different artist is a cover. Distinctive-title
+        // bypass is only for wrapped/typo aliases, not exact keys.
+        if (!artistOk && (matchedKey === key || !isDistinctiveTitle(key))) {
           continue;
         }
 
@@ -430,8 +435,7 @@ function canonicalizeMashupKey(key: string) {
 
 function isDistinctiveTitle(key: string) {
   const tokens = key.split(" ").filter(Boolean);
-  // 11 letters lets "suno chanda" merge viral uploads without an artist
-  // match; 2-word titles like "love story" (10) still need an artist.
+  // Used only when titles are not identical (wrapped/typo aliases).
   return key.length >= 11 && tokens.length >= 2;
 }
 
