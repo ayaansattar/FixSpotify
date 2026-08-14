@@ -77,10 +77,6 @@ jobs:
           }
           function softTitleKey(name) {
             const key = softNormalizeTitle(name)
-              .replace(
-                /\b(slowed(?:\s*down)?|reverb|sped\s*up|speed\s*up|nightcore|remix(?:ed)?|bootleg|tik\s*tok|viral|edit|mix|version)\b/gu,
-                " ",
-              )
               .replace(/\b(original|single|album|extended|soundtrack|ost)\b/gu, " ")
               .replace(/\bseason\s*\d+\b/gu, " ")
               .replace(/\b((?:19|20)\d{2})\b/g, " ")
@@ -135,12 +131,12 @@ jobs:
                 (compactB && expandedA && compactB === expandedA),
             );
           }
-          function titleTokensContained(needle, haystack) {
+          function titleTokensWrapped(needle, haystack) {
             if (needle.length < 8) return false;
             const n = needle.split(" ").filter(Boolean);
             const h = haystack.split(" ").filter(Boolean);
-            if (!n.length || n.length >= h.length) return false;
-            for (let i = 0; i <= h.length - n.length; i++) {
+            if (!n.length || n.length + 2 > h.length) return false;
+            for (let i = 1; i <= h.length - n.length - 1; i++) {
               if (n.every((tok, j) => h[i + j] === tok)) return true;
             }
             return false;
@@ -148,7 +144,7 @@ jobs:
           function titlesLooselyMatch(a, b) {
             if (!a || !b) return false;
             if (a === b) return true;
-            if (titleTokensContained(a, b) || titleTokensContained(b, a)) return true;
+            if (titleTokensWrapped(a, b) || titleTokensWrapped(b, a)) return true;
             if (Math.min(a.length, b.length) < 10) return false;
             if (Math.abs(a.length - b.length) > 1) return false;
             // cheap levenshtein <= 1

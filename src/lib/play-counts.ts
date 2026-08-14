@@ -29,11 +29,12 @@ type AggregatedPlay = {
  * recording across locales/releases (e.g. Arabic "قيام" vs Latin "Qeiam"), so
  * counting by playlist track ID alone undercounts. Matching order:
  * 1) exact track ID
- * 2) soft title (edit/remix suffixes stripped; mashup "A x B" / "B x A"
- *    treated as the same; shorter titles contained in longer ones, e.g.
- *    "Humsafar" inside "Wo Humsafar Tha"; close typos allowed) + artist
- *    (including initials like "QB" for "Quratulain Balouch"), or title
- *    alone when the soft title is distinctive enough for viral edits
+ * 2) soft title (release metadata stripped; mashup "A x B" / "B x A"
+ *    treated as the same; a shorter title may match inside a longer one
+ *    only when extra words wrap it, e.g. "Humsafar" inside "Wo Humsafar
+ *    Tha"; close typos allowed) + artist (including initials like "QB"
+ *    for "Quratulain Balouch"), or title alone when the soft title is
+ *    distinctive enough. Remix, burnt, and similar arrangement labels stay.
  * 3) shared ISRC (when an access token is provided)
  */
 export async function getPlayCounts(
@@ -89,11 +90,13 @@ export async function getPlayCounts(
 
   // Soft-title aliases. Include other playlist track IDs too, so
   // "Take on Me" and "Take on Me - MTV Unplugged" on the same playlist share
-  // play history when their soft titles match. Viral edits
-  // ("Drive Forever (Slowed + Reverb)") also merge when the soft title is
-  // distinctive enough, even if upload artists differ. Mashups named
+  // play history when their soft titles match. Mashups named
   // "I'll Do It x Ayesha" vs "Ayesha X i'll do it" share a canonical key.
-  // Remixes and instrumentals keep distinct soft keys from the original vocal.
+  // Remixes, burnt cuts, and other arrangement suffixes stay distinct
+  // from the original vocal. A shorter title may only match inside a
+  // longer one when it is wrapped by extra words ("Humsafar" inside
+  // "Wo Humsafar Tha"), not when the extra words are a trailing version
+  // ("I Like the Way You Kiss Me - burnt").
   //
   // Aggregate by trackId first: artist backfills can split one ID across
   // several groupBy rows; matching only the first row undercounted the rest.
@@ -392,16 +395,13 @@ function softNormalizeTitle(name: string) {
     .trim();
 }
 
-/** Alias key that also collapses viral edit suffixes, remaster years, and
- *  common release qualifiers (single / album / original version).
+/** Alias key that also collapses remaster years and common release
+ *  qualifiers (single / album / original / soundtrack / season).
  *  Mashup halves around a standalone "x" are sorted so "A x B" and "B x A"
- *  share a key. Does not strip remix / instrumental — those stay distinct. */
+ *  share a key. Remix, instrumental, burnt, slowed, and similar arrangement
+ *  labels are kept so those recordings stay distinct from the original. */
 function softTitleKey(name: string) {
   const key = softNormalizeTitle(name)
-    .replace(
-      /\b(slowed(?:\s*down)?|reverb|sped\s*up|speed\s*up|nightcore|bootleg|tik\s*tok|viral|edit|version)\b/gu,
-      " ",
-    )
     // "Personal Jesus - Original Single Version" vs "Personal Jesus - Single Version"
     // "Suno Chanda - Original Soundtrack" vs "Suno Chanda Season 2"
     .replace(/\b(original|single|album|extended|soundtrack|ost)\b/gu, " ")
@@ -442,9 +442,9 @@ function titlesLooselyMatch(a: string, b: string) {
   if (a === b) {
     return true;
   }
-  // "Humsafar" vs "Wo Humsafar Tha". Artist still has to match unless
-  // the playlist title is distinctive on its own.
-  if (titleTokensContained(a, b) || titleTokensContained(b, a)) {
+  // "Humsafar" vs "Wo Humsafar Tha" (wrapped). Do not treat a title as
+  // matching its own remix/burnt/mashup suffix or prefix.
+  if (titleTokensWrapped(a, b) || titleTokensWrapped(b, a)) {
     return true;
   }
   if (Math.min(a.length, b.length) < 10) {
@@ -453,8 +453,13 @@ function titlesLooselyMatch(a: string, b: string) {
   return levenshtein(a, b) <= 1;
 }
 
-/** True when every token of `needle` appears as a contiguous run in `haystack`. */
-function titleTokensContained(needle: string, haystack: string) {
+/**
+ * True when `needle` appears as a contiguous run in `haystack` with extra
+ * tokens both before and after it. That matches grammatical wrapping
+ * ("wo humsafar tha") but not version suffixes ("… kiss me burnt") or
+ * mashup halves ("better off alone x … kiss me").
+ */
+function titleTokensWrapped(needle: string, haystack: string) {
   if (needle.length < 8) {
     return false;
   }
@@ -464,12 +469,12 @@ function titleTokensContained(needle: string, haystack: string) {
 
   if (
     needleTokens.length === 0 ||
-    needleTokens.length >= haystackTokens.length
+    needleTokens.length + 2 > haystackTokens.length
   ) {
     return false;
   }
 
-  for (let i = 0; i <= haystackTokens.length - needleTokens.length; i += 1) {
+  for (let i = 1; i <= haystackTokens.length - needleTokens.length - 1; i += 1) {
     if (needleTokens.every((token, j) => haystackTokens[i + j] === token)) {
       return true;
     }
