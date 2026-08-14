@@ -81,7 +81,8 @@ jobs:
                 /\b(slowed(?:\s*down)?|reverb|sped\s*up|speed\s*up|nightcore|remix(?:ed)?|bootleg|tik\s*tok|viral|edit|mix|version)\b/gu,
                 " ",
               )
-              .replace(/\b(original|single|album|extended)\b/gu, " ")
+              .replace(/\b(original|single|album|extended|soundtrack|ost)\b/gu, " ")
+              .replace(/\bseason\s*\d+\b/gu, " ")
               .replace(/\b((?:19|20)\d{2})\b/g, " ")
               .replace(/\s+/g, " ")
               .trim();
@@ -112,7 +113,7 @@ jobs:
           }
           function isDistinctiveTitle(key) {
             const tokens = key.split(" ").filter(Boolean);
-            return key.length >= 12 && tokens.length >= 2;
+            return key.length >= 11 && tokens.length >= 2;
           }
           function compactArtistInitials(name) {
             const tokens = name.split(" ").filter(Boolean);

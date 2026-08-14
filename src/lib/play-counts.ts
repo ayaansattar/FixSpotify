@@ -403,7 +403,9 @@ function softTitleKey(name: string) {
       " ",
     )
     // "Personal Jesus - Original Single Version" vs "Personal Jesus - Single Version"
-    .replace(/\b(original|single|album|extended)\b/gu, " ")
+    // "Suno Chanda - Original Soundtrack" vs "Suno Chanda Season 2"
+    .replace(/\b(original|single|album|extended|soundtrack|ost)\b/gu, " ")
+    .replace(/\bseason\s*\d+\b/gu, " ")
     // "Kashmir - 1990 Remaster" vs "Kashmir - Remaster"
     .replace(/\b((?:19|20)\d{2})\b/g, " ")
     .replace(/\s+/g, " ")
@@ -428,7 +430,9 @@ function canonicalizeMashupKey(key: string) {
 
 function isDistinctiveTitle(key: string) {
   const tokens = key.split(" ").filter(Boolean);
-  return key.length >= 12 && tokens.length >= 2;
+  // 11 letters lets "suno chanda" merge viral uploads without an artist
+  // match; 2-word titles like "love story" (10) still need an artist.
+  return key.length >= 11 && tokens.length >= 2;
 }
 
 function titlesLooselyMatch(a: string, b: string) {
