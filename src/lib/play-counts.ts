@@ -249,8 +249,17 @@ async function computePlayCounts(
               : artistsMatch(variant, track.artistIds, track.artistNames),
           );
         // Exact titles: covers and remixes with a new lead stay split.
-        // Distinctive-title bypass is only for wrapped/typo aliases.
-        if (!artistOk && (matchedKey === key || !isDistinctiveTitle(key))) {
+        // Distinctive-title bypass is only for wrapped aliases ("Humsafar"
+        // inside "Wo Humsafar Tha"), not one-letter typos that collide across
+        // different artists ("Mun Kunto Maula" vs "Man Kunto Maula").
+        const wrappedAlias =
+          matchedKey !== key &&
+          (titleTokensWrapped(key, matchedKey) ||
+            titleTokensWrapped(matchedKey, key));
+        if (
+          !artistOk &&
+          (matchedKey === key || !isDistinctiveTitle(key) || !wrappedAlias)
+        ) {
           continue;
         }
 
@@ -518,10 +527,12 @@ function artistsMatchSameTitle(
     return true;
   }
 
-  // Sparse play history often stores only one name. Count it with the
-  // playlist only when that name is the playlist lead, not a featured
-  // artist on a remix.
-  if (played.length === 1 && artistNamesMatch(playLead, playlistLead)) {
+  // Sparse play history often stores only one name (e.g. "Sean Kingston"
+  // for the Justin Bieber duet). Count it when that artist is anywhere
+  // on the playlist credits. Title-guest mismatches like "Calm Down
+  // (with Selena Gomez)" vs Rema-only plays stay split via
+  // featuredGuestsAlign before this runs.
+  if (played.length === 1 && artistInList(playLead, playlist)) {
     return true;
   }
 

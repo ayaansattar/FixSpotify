@@ -135,7 +135,7 @@ jobs:
             if (samePeople) return true;
             if (completePlayCredits) return false;
             if (artistInList(playLead, playlist) && artistInList(playlistLead, played)) return true;
-            if (played.length === 1 && artistNamesMatch(playLead, playlistLead)) return true;
+            if (played.length === 1 && artistInList(playLead, playlist)) return true;
             if (playlist.length === 1 && artistNamesMatch(playlistLead, playLead)) return true;
             return false;
           }
@@ -339,7 +339,14 @@ jobs:
                       ? artistsMatchSameTitle(v, track.artistIds, track.artistNames, playCredits.names, playCredits.complete)
                       : artistsMatch(v, track.artistIds, track.artistNames),
                   );
-                if (!artistOk && (candidateKey === key || !isDistinctiveTitle(key))) continue;
+                const wrappedAlias =
+                  candidateKey !== key &&
+                  (titleTokensWrapped(key, candidateKey) ||
+                    titleTokensWrapped(candidateKey, key));
+                if (
+                  !artistOk &&
+                  (candidateKey === key || !isDistinctiveTitle(key) || !wrappedAlias)
+                ) continue;
                 counted.add(candidate.trackId);
                 count += candidate.count;
               }

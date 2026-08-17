@@ -6,6 +6,9 @@ type CountableTrack = {
   id: string;
 };
 
+/** Bump when play-count matching rules change so cached rows recompute. */
+const MATCHER_VERSION = 2;
+
 function hashInput(value: string) {
   return createHash("sha256").update(value).digest("hex").slice(0, 24);
 }
@@ -20,7 +23,9 @@ export function playCountCacheKey(
     .sort()
     .join(",");
   const sinceKey = since?.toISOString() ?? "lifetime";
-  return hashInput(`${trackIds}|${sinceKey}|${withIsrc ? "isrc" : "plain"}`);
+  return hashInput(
+    `${trackIds}|${sinceKey}|${withIsrc ? "isrc" : "plain"}|v${MATCHER_VERSION}`,
+  );
 }
 
 export async function playHistoryVersion() {
