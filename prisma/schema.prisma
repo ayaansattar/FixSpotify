@@ -102,3 +102,10 @@ model PlaylistTrackCache {
   tracks     String
   updatedAt  DateTime @updatedAt
 }
+
+model PlayCountCache {
+  cacheKey       String   @id
+  counts         String
+  historyVersion String
+  updatedAt      DateTime @updatedAt
+}

@@ -1,4 +1,8 @@
 import { db } from "@/lib/db";
+import {
+  readPlayCountCache,
+  writePlayCountCache,
+} from "@/lib/play-count-cache";
 import { ensureTrackMeta } from "@/lib/track-meta";
 
 export type CountableTrack = {
@@ -48,6 +52,26 @@ export async function getPlayCounts(
   since: Date | null,
   accessToken?: string | null,
 ) {
+  if (tracks.length === 0) {
+    return new Map<string, number>();
+  }
+
+  const withIsrc = Boolean(accessToken);
+  const cached = await readPlayCountCache(tracks, since, withIsrc);
+  if (cached) {
+    return cached;
+  }
+
+  const counts = await computePlayCounts(tracks, since, accessToken);
+  await writePlayCountCache(tracks, since, withIsrc, counts);
+  return counts;
+}
+
+async function computePlayCounts(
+  tracks: CountableTrack[],
+  since: Date | null,
+  accessToken?: string | null,
+) {
   const countByTrack = new Map<string, number>();
   const countedPlayIds = new Map<string, Set<string>>();
   const chunkSize = 500;
@@ -56,16 +80,6 @@ export async function getPlayCounts(
   const artistNamesById = new Map(
     tracks.map((track) => [track.id, track.artistNames] as const),
   );
-  const metaArtistsById = new Map<string, string[]>();
-  const metaRows = await db.trackMeta.findMany({
-    select: { trackId: true, artistName: true },
-  });
-  for (const row of metaRows) {
-    const names = splitArtistCredits(row.artistName);
-    if (names.length > 0) {
-      metaArtistsById.set(row.trackId, names);
-    }
-  }
 
   for (const track of tracks) {
     countedPlayIds.set(track.id, new Set([track.id]));
@@ -139,6 +153,25 @@ export async function getPlayCounts(
   }
 
   const aliasKeys = Array.from(aliasBuckets.keys());
+  const looseIndex = buildLooseMatchIndex(aliasKeys);
+  const matchedKeysCache = new Map<string, string[]>();
+
+  function matchedKeysFor(key: string) {
+    let matched = matchedKeysCache.get(key);
+    if (!matched) {
+      matched = [];
+      for (const candidateKey of getCandidateKeys(key, looseIndex)) {
+        if (titlesLooselyMatch(key, candidateKey)) {
+          matched.push(candidateKey);
+        }
+      }
+      matchedKeysCache.set(key, matched);
+    }
+    return matched;
+  }
+
+  const metaArtistsById = new Map<string, string[]>();
+  const neededMetaIds = new Set<string>();
 
   for (const track of tracks) {
     const key = softTitleKey(track.name);
@@ -146,9 +179,36 @@ export async function getPlayCounts(
       continue;
     }
 
-    const matchedKeys = aliasKeys.filter((candidateKey) =>
-      titlesLooselyMatch(key, candidateKey),
-    );
+    for (const matchedKey of matchedKeysFor(key)) {
+      for (const candidate of aliasBuckets.get(matchedKey) ?? []) {
+        if (!artistNamesById.has(candidate.trackId)) {
+          neededMetaIds.add(candidate.trackId);
+        }
+      }
+    }
+  }
+
+  if (neededMetaIds.size > 0) {
+    const metaRows = await db.trackMeta.findMany({
+      where: { trackId: { in: Array.from(neededMetaIds) } },
+      select: { trackId: true, artistName: true },
+    });
+
+    for (const row of metaRows) {
+      const names = splitArtistCredits(row.artistName);
+      if (names.length > 0) {
+        metaArtistsById.set(row.trackId, names);
+      }
+    }
+  }
+
+  for (const track of tracks) {
+    const key = softTitleKey(track.name);
+    if (!key) {
+      continue;
+    }
+
+    const matchedKeys = matchedKeysFor(key);
     const counted = countedPlayIds.get(track.id)!;
     let extra = 0;
 
@@ -665,6 +725,59 @@ function isDistinctiveTitle(key: string) {
   const tokens = key.split(" ").filter(Boolean);
   // Used only when titles are not identical (wrapped/typo aliases).
   return key.length >= 11 && tokens.length >= 2;
+}
+
+type LooseMatchIndex = {
+  tokenToKeys: Map<string, Set<string>>;
+  byLengthPrefix: Map<string, Set<string>>;
+};
+
+/** Narrow alias-key candidates before running loose title checks. */
+function buildLooseMatchIndex(aliasKeys: string[]): LooseMatchIndex {
+  const tokenToKeys = new Map<string, Set<string>>();
+  const byLengthPrefix = new Map<string, Set<string>>();
+
+  for (const aliasKey of aliasKeys) {
+    for (const token of aliasKey.split(" ").filter((part) => part.length >= 4)) {
+      const bucket = tokenToKeys.get(token) ?? new Set<string>();
+      bucket.add(aliasKey);
+      tokenToKeys.set(token, bucket);
+    }
+
+    if (aliasKey.length >= 10) {
+      const bucketKey = `${aliasKey.length}:${aliasKey.slice(0, 3)}`;
+      const bucket = byLengthPrefix.get(bucketKey) ?? new Set<string>();
+      bucket.add(aliasKey);
+      byLengthPrefix.set(bucketKey, bucket);
+    }
+  }
+
+  return { tokenToKeys, byLengthPrefix };
+}
+
+function getCandidateKeys(key: string, index: LooseMatchIndex) {
+  const candidates = new Set<string>([key]);
+
+  for (const token of key.split(" ").filter((part) => part.length >= 4)) {
+    for (const aliasKey of index.tokenToKeys.get(token) ?? []) {
+      candidates.add(aliasKey);
+    }
+  }
+
+  if (key.length >= 10) {
+    for (const length of [key.length - 1, key.length, key.length + 1]) {
+      if (length < 10) {
+        continue;
+      }
+
+      const bucketKey = `${length}:${key.slice(0, 3)}`;
+      for (const aliasKey of index.byLengthPrefix.get(bucketKey) ?? []) {
+        candidates.add(aliasKey);
+      }
+    }
+  }
+
+  return candidates;
 }
 
 function titlesLooselyMatch(a: string, b: string) {

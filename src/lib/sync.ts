@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { invalidatePlayCountCache } from "@/lib/play-count-cache";
 import { getRecentlyPlayed } from "@/lib/spotify";
 
 type SyncResult = {
@@ -54,6 +55,8 @@ export async function syncRecentlyPlayed(
     await db.play.createMany({ data: freshPlays });
   }
 
+  let backfilledArtists = false;
+
   // Backfill artist names onto older rows that share these track IDs but were
   // stored before artistName existed.
   for (const play of plays) {
@@ -61,7 +64,7 @@ export async function syncRecentlyPlayed(
       continue;
     }
 
-    await db.play.updateMany({
+    const updated = await db.play.updateMany({
       where: {
         trackId: play.trackId,
         artistName: "",
@@ -71,6 +74,14 @@ export async function syncRecentlyPlayed(
         artistName: play.artistName,
       },
     });
+
+    if (updated.count > 0) {
+      backfilledArtists = true;
+    }
+  }
+
+  if (freshPlays.length > 0 || backfilledArtists) {
+    await invalidatePlayCountCache();
   }
 
   const totalPlays = await db.play.count();
