@@ -120,8 +120,8 @@ DATABASE_URL="file:./prisma/dev.db"
 
 # Free key from https://aistudio.google.com/apikey
 GEMINI_API_KEY=
-# Optional override (default: gemini-flash-latest)
-# GEMINI_MODEL=gemini-flash-latest
+# Optional override (default: gemini-flash-latest, with newer Flash fallbacks)
+# GEMINI_MODEL=gemini-3.5-flash-lite
 ```
 
 Generate a NextAuth secret with:

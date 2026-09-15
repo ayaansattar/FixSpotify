@@ -5,8 +5,10 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 const DEFAULT_MODEL = "gemini-flash-latest";
 const FALLBACK_MODELS = [
   "gemini-flash-latest",
-  "gemini-2.0-flash-lite",
-  "gemini-2.0-flash",
+  "gemini-3.5-flash-lite",
+  "gemini-3.6-flash",
+  "gemini-2.5-flash-lite",
+  "gemini-2.5-flash",
 ];
 
 export function getGeminiModel(modelName = process.env.GEMINI_MODEL?.trim() || DEFAULT_MODEL) {
@@ -232,11 +234,15 @@ function formatGeminiError(error: Error | null) {
   const message = error?.message ?? "Unknown Gemini error.";
 
   if (/429|quota|Too Many Requests/i.test(message)) {
-    return "Gemini free-tier quota is exhausted for the default models. Wait a bit and try again, or set GEMINI_MODEL=gemini-flash-latest in .env.";
+    return "Gemini free-tier quota is exhausted for the default models. Wait a bit and try again, or set GEMINI_MODEL=gemini-3.5-flash-lite in .env.";
+  }
+
+  if (/503|high demand|unavailable/i.test(message) && !/404|no longer available/i.test(message)) {
+    return "Gemini is temporarily overloaded. Wait a minute and try again, or set GEMINI_MODEL=gemini-3.5-flash-lite in .env.";
   }
 
   if (/404|no longer available/i.test(message)) {
-    return "That Gemini model is unavailable. Set GEMINI_MODEL=gemini-flash-latest in .env.";
+    return "That Gemini model is unavailable. Set GEMINI_MODEL=gemini-3.5-flash-lite in .env.";
   }
 
   return message.length > 280 ? `${message.slice(0, 280)}…` : message;
