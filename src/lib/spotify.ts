@@ -452,3 +452,16 @@ export function upgradeAlbumImageUrl(
     .replace("ab67616d00004851", "ab67616d0000b273")
     .replace("ab67616d00001e02", "ab67616d0000b273");
 }
+
+/** Smallest (≈64px) variant — enough for sampling an average color. */
+export function thumbnailAlbumImageUrl(
+  url: string | null | undefined,
+): string | null {
+  if (!url) {
+    return null;
+  }
+
+  return url
+    .replace("ab67616d0000b273", "ab67616d00004851")
+    .replace("ab67616d00001e02", "ab67616d00004851");
+}

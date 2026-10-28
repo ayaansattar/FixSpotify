@@ -85,7 +85,8 @@ jobs:
           }
           function softTitleKey(name) {
             const key = softNormalizeTitle(name)
-              .replace(/\b(original|single|album|extended|soundtrack|ost)\b/gu, " ")
+              .replace(/\b(original|single|singles|album|extended|soundtrack|ost)\b/gu, " ")
+              .replace(/\bspotify\b/gu, " ")
               .replace(/\bseason\s*\d+\b/gu, " ")
               .replace(/\b((?:19|20)\d{2})\b/g, " ")
               .replace(/\s+/g, " ")
@@ -357,23 +358,22 @@ jobs:
           for (const query of queries) {
             console.log("\n==== QUERY:", query, "====");
             const q = query.toLowerCase();
-            const hits = allTracks.filter((t) => t.name.toLowerCase().includes(q));
+            const hits = allTracks.filter(
+              (t) =>
+                t.name.toLowerCase().includes(q) ||
+                t.artistNames.some((name) => name.toLowerCase().includes(q)),
+            );
             // Prefer modern-pop-ish / unique hits; print all playlist hits
             if (hits.length === 0) {
               console.log("PLAYLIST_HITS: none");
             }
             for (const hit of hits) {
-              const related = playGroups.filter((g) =>
-                softTitleKey(g.trackName).includes(softTitleKey(hit.name).slice(0, 8)) ||
-                g.trackName.toLowerCase().includes(q) ||
-                softTitleKey(g.trackName) === softTitleKey(hit.name)
-              );
-              // tighter related: same soft key loosely or name contains query
               const relatedTight = playGroups.filter((g) => {
                 const gk = softTitleKey(g.trackName);
                 const hk = softTitleKey(hit.name);
                 return (
                   g.trackName.toLowerCase().includes(q) ||
+                  g.artistName.toLowerCase().includes(q) ||
                   (hk && gk && titlesLooselyMatch(hk, gk))
                 );
               });
@@ -397,11 +397,13 @@ jobs:
             }
 
             // Also show history matches even if not on a playlist
-            const historyOnly = playGroups.filter((g) =>
-              g.trackName.toLowerCase().includes(q)
+            const historyOnly = playGroups.filter(
+              (g) =>
+                g.trackName.toLowerCase().includes(q) ||
+                g.artistName.toLowerCase().includes(q),
             );
-            if (hits.length === 0 && historyOnly.length) {
-              console.log("HISTORY_ONLY", JSON.stringify(historyOnly.map((g) => ({
+            if (historyOnly.length) {
+              console.log("HISTORY_MATCHES", JSON.stringify(historyOnly.map((g) => ({
                 trackId: g.trackId,
                 name: g.trackName,
                 artist: g.artistName,

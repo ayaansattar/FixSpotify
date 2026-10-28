@@ -52,7 +52,13 @@ function vividFromRgb(r: number, g: number, b: number): string {
   return `hsl(${hue} ${satPct}% ${lightPct}%)`;
 }
 
-const albumColorCache = new Map<string, string>();
+/** null = extraction failed (CORS, decode); don't retry it this session. */
+const albumColorCache = new Map<string, string | null>();
+
+/** Synchronous lookup: undefined means not attempted yet. */
+export function getCachedAlbumColor(imageUrl: string) {
+  return albumColorCache.get(imageUrl);
+}
 
 /**
  * Average a downscaled album cover. Returns null when the CDN blocks canvas
@@ -60,11 +66,11 @@ const albumColorCache = new Map<string, string>();
  */
 export function extractAlbumColor(imageUrl: string): Promise<string | null> {
   const cached = albumColorCache.get(imageUrl);
-  if (cached) {
+  if (cached !== undefined) {
     return Promise.resolve(cached);
   }
 
-  return new Promise((resolve) => {
+  return new Promise<string | null>((resolve) => {
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.decoding = "async";
@@ -112,7 +118,6 @@ export function extractAlbumColor(imageUrl: string): Promise<string | null> {
         }
 
         const color = vividFromRgb(r / weight, g / weight, b / weight);
-        albumColorCache.set(imageUrl, color);
         resolve(color);
       } catch {
         resolve(null);
@@ -121,5 +126,8 @@ export function extractAlbumColor(imageUrl: string): Promise<string | null> {
 
     img.onerror = () => resolve(null);
     img.src = imageUrl;
+  }).then((color) => {
+    albumColorCache.set(imageUrl, color);
+    return color;
   });
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 
 import { ColorArchiveList } from "@/components/color-archive-list";
 import { Dropdown } from "@/components/dropdown";
@@ -24,6 +24,15 @@ type TrackListProps = {
   playlistName: string;
   initialTracks: RankedTrack[];
 };
+
+const playBuckets = [
+  { value: "1-2", label: "1–2 plays", matches: (count: number) => count >= 1 && count <= 2 },
+  { value: "3-5", label: "3–5 plays", matches: (count: number) => count >= 3 && count <= 5 },
+  { value: "6-10", label: "6–10 plays", matches: (count: number) => count >= 6 && count <= 10 },
+  { value: "10+", label: "10+ plays", matches: (count: number) => count >= 10 },
+  { value: "20+", label: "20+ plays", matches: (count: number) => count >= 20 },
+  { value: "30+", label: "30+ plays", matches: (count: number) => count >= 30 },
+];
 
 type Notice = {
   kind: "error" | "success";
@@ -57,76 +66,93 @@ export function TrackList({
     setNotice(null);
   }, [initialTracks]);
 
-  const playBuckets = [
-    { value: "1-2", label: "1–2 plays", matches: (count: number) => count >= 1 && count <= 2 },
-    { value: "3-5", label: "3–5 plays", matches: (count: number) => count >= 3 && count <= 5 },
-    { value: "6-10", label: "6–10 plays", matches: (count: number) => count >= 6 && count <= 10 },
-    { value: "10+", label: "10+ plays", matches: (count: number) => count >= 10 },
-    { value: "20+", label: "20+ plays", matches: (count: number) => count >= 20 },
-    { value: "30+", label: "30+ plays", matches: (count: number) => count >= 30 },
-  ];
+  // Memoized so unrelated state (pending/notice) doesn't hand the archive list
+  // a new items array, which would re-render every row and redo color work.
+  const filterOptions = useMemo(() => {
+    const bucketCounts = playBuckets.map((bucket) => ({
+      bucket,
+      count: tracks.filter((track) => bucket.matches(track.playCount)).length,
+    }));
 
-  const filterOptions = [
-    { value: "all", label: `All tracks (${tracks.length})` },
-    {
-      value: "unavailable",
-      label: `Unavailable (${tracks.filter((track) => !track.isPlayable).length})`,
-    },
-    {
-      value: "never",
-      label: `Never played (${tracks.filter((track) => track.playCount === 0).length})`,
-    },
-    ...playBuckets
-      .map((bucket) => ({
-        value: bucket.value,
-        label: `${bucket.label} (${
-          tracks.filter((track) => bucket.matches(track.playCount)).length
-        })`,
-        count: tracks.filter((track) => bucket.matches(track.playCount)).length,
-      }))
-      .filter((option) => option.count > 0 || option.value === filter)
-      .map(({ value, label }) => ({ value, label })),
-  ];
+    return [
+      { value: "all", label: `All tracks (${tracks.length})` },
+      {
+        value: "unavailable",
+        label: `Unavailable (${tracks.filter((track) => !track.isPlayable).length})`,
+      },
+      {
+        value: "never",
+        label: `Never played (${tracks.filter((track) => track.playCount === 0).length})`,
+      },
+      ...bucketCounts
+        .filter(({ bucket, count }) => count > 0 || bucket.value === filter)
+        .map(({ bucket, count }) => ({
+          value: bucket.value,
+          label: `${bucket.label} (${count})`,
+        })),
+    ];
+  }, [tracks, filter]);
 
-  const activeBucket = playBuckets.find((bucket) => bucket.value === filter);
-  const normalizedQuery = query.trim().toLowerCase();
-  const visibleTracks = tracks.filter((track) => {
-    const matchesFilter =
-      filter === "all"
-        ? true
-        : filter === "unavailable"
-          ? !track.isPlayable
-          : filter === "never"
-            ? track.playCount === 0
-            : activeBucket
-              ? activeBucket.matches(track.playCount)
-              : true;
-    const matchesSearch =
-      !normalizedQuery ||
-      track.name.toLowerCase().includes(normalizedQuery) ||
-      track.artists.some((artist) =>
-        artist.name.toLowerCase().includes(normalizedQuery),
-      );
+  // Typing stays responsive; the (large) list re-filters at lower priority.
+  const deferredQuery = useDeferredValue(query);
+  const normalizedQuery = deferredQuery.trim().toLowerCase();
+  const visibleTracks = useMemo(() => {
+    const activeBucket = playBuckets.find((bucket) => bucket.value === filter);
 
-    return matchesFilter && matchesSearch;
-  });
+    return tracks.filter((track) => {
+      const matchesFilter =
+        filter === "all"
+          ? true
+          : filter === "unavailable"
+            ? !track.isPlayable
+            : filter === "never"
+              ? track.playCount === 0
+              : activeBucket
+                ? activeBucket.matches(track.playCount)
+                : true;
+      const matchesSearch =
+        !normalizedQuery ||
+        track.name.toLowerCase().includes(normalizedQuery) ||
+        track.artists.some((artist) =>
+          artist.name.toLowerCase().includes(normalizedQuery),
+        );
 
-  const archiveItems = useMemo(
+      return matchesFilter && matchesSearch;
+    });
+  }, [tracks, filter, normalizedQuery]);
+
+  // One stable item object per track, so filtering reuses them instead of
+  // giving every row new props.
+  const itemsById = useMemo(
     () =>
-      visibleTracks.map((track) => ({
-        id: track.id,
-        title: track.name,
-        subtitle:
-          track.artists.map((artist) => artist.name).join(", ") || "Unknown",
-        badge:
-          track.playCount === 0
-            ? "Never played"
-            : `${track.playCount} ${track.playCount === 1 ? "play" : "plays"}`,
-        imageUrl: track.imageUrl,
-        colorKey:
-          track.artists.map((artist) => artist.name).join(", ") || track.name,
-      })),
-    [visibleTracks],
+      new Map(
+        tracks.map(
+          (track) =>
+            [
+              track.id,
+              {
+                id: track.id,
+                title: track.name,
+                subtitle:
+                  track.artists.map((artist) => artist.name).join(", ") ||
+                  "Unknown",
+                badge:
+                  track.playCount === 0
+                    ? "Never played"
+                    : `${track.playCount} ${track.playCount === 1 ? "play" : "plays"}`,
+                imageUrl: track.imageUrl,
+                colorKey:
+                  track.artists.map((artist) => artist.name).join(", ") ||
+                  track.name,
+              },
+            ] as const,
+        ),
+      ),
+    [tracks],
+  );
+  const archiveItems = useMemo(
+    () => visibleTracks.map((track) => itemsById.get(track.id)!),
+    [visibleTracks, itemsById],
   );
 
   async function play(track: RankedTrack) {

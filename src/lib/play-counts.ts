@@ -1,5 +1,7 @@
 import { db } from "@/lib/db";
 import {
+  playCountCacheKey,
+  playHistoryVersion,
   readPlayCountCache,
   writePlayCountCache,
 } from "@/lib/play-count-cache";
@@ -56,15 +58,58 @@ export async function getPlayCounts(
     return new Map<string, number>();
   }
 
+  // Callers pass "now minus N days"; without rounding, every request would
+  // get a new cache key and windowed views would never hit the cache.
+  const windowStart = since ? startOfDay(since) : null;
   const withIsrc = Boolean(accessToken);
-  const cached = await readPlayCountCache(tracks, since, withIsrc);
-  if (cached) {
-    return cached;
+  const cached = await readPlayCountCache(tracks, windowStart, withIsrc);
+  if (cached?.fresh) {
+    return cached.counts;
   }
 
-  const counts = await computePlayCounts(tracks, since, accessToken);
-  await writePlayCountCache(tracks, since, withIsrc, counts);
-  return counts;
+  const refresh = refreshPlayCounts(tracks, windowStart, accessToken, withIsrc);
+  if (cached) {
+    // Stale-while-revalidate: history only moved by the last sync's plays.
+    refresh.catch((error) => {
+      console.warn("[play-counts] Background refresh failed", error);
+    });
+    return cached.counts;
+  }
+
+  return refresh;
+}
+
+/** One recompute per cache key at a time (page loads + background refresh). */
+const refreshesInFlight = new Map<string, Promise<Map<string, number>>>();
+
+function refreshPlayCounts(
+  tracks: CountableTrack[],
+  since: Date | null,
+  accessToken: string | null | undefined,
+  withIsrc: boolean,
+) {
+  const cacheKey = playCountCacheKey(tracks, since, withIsrc);
+  let refresh = refreshesInFlight.get(cacheKey);
+
+  if (!refresh) {
+    refresh = (async () => {
+      const historyVersion = await playHistoryVersion();
+      const counts = await computePlayCounts(tracks, since, accessToken);
+      await writePlayCountCache(tracks, since, withIsrc, counts, historyVersion);
+      return counts;
+    })().finally(() => {
+      refreshesInFlight.delete(cacheKey);
+    });
+    refreshesInFlight.set(cacheKey, refresh);
+  }
+
+  return refresh;
+}
+
+function startOfDay(date: Date) {
+  const start = new Date(date);
+  start.setHours(0, 0, 0, 0);
+  return start;
 }
 
 async function computePlayCounts(
@@ -310,6 +355,13 @@ async function mergeIsrcAliases(
   const playlistIdsToResolve: string[] = [];
   const candidateIds = new Set<string>();
   const MAX_FETCHES = 120;
+  // This loop is tracks × outside groups; normalizing artist names once up
+  // front avoids millions of regex passes on large playlists.
+  const normalizedOutside = outsideGroups.map((group) => ({
+    trackId: group.trackId,
+    artistId: group.artistId,
+    artistName: softNormalizeArtist(group.artistName),
+  }));
 
   for (const track of orderedTracks) {
     const remaining = MAX_FETCHES - (playlistIdsToResolve.length + candidateIds.size);
@@ -320,8 +372,9 @@ async function mergeIsrcAliases(
     const counted = countedPlayIds.get(track.id)!;
     let addedForTrack = 0;
     const perTrackBudget = trackCountIsZero(countByTrack, track.id) ? 12 : 4;
+    const trackArtistNames = track.artistNames.map(softNormalizeArtist);
 
-    for (const group of outsideGroups) {
+    for (const group of normalizedOutside) {
       if (
         addedForTrack >= perTrackBudget ||
         playlistIdsToResolve.length + candidateIds.size >= MAX_FETCHES
@@ -333,7 +386,7 @@ async function mergeIsrcAliases(
         continue;
       }
 
-      if (artistsMatch(group, track.artistIds, track.artistNames)) {
+      if (normalizedArtistsMatch(group, track.artistIds, trackArtistNames)) {
         candidateIds.add(group.trackId);
         addedForTrack += 1;
       }
@@ -441,20 +494,31 @@ function artistsMatch(
   artistIds: string[],
   artistNames: string[],
 ) {
+  return normalizedArtistsMatch(
+    { artistId: play.artistId, artistName: softNormalizeArtist(play.artistName) },
+    artistIds,
+    artistNames.map(softNormalizeArtist),
+  );
+}
+
+/** artistsMatch with names already passed through softNormalizeArtist. */
+function normalizedArtistsMatch(
+  play: { artistId: string; artistName: string },
+  artistIds: string[],
+  normalizedArtistNames: string[],
+) {
   if (play.artistId && play.artistId !== "unknown") {
     if (artistIds.includes(play.artistId)) {
       return true;
     }
   }
 
-  const playArtist = softNormalizeArtist(play.artistName);
-
-  if (!playArtist) {
+  if (!play.artistName) {
     return false;
   }
 
-  return artistNames.some((name) =>
-    artistNamesMatch(playArtist, softNormalizeArtist(name)),
+  return normalizedArtistNames.some((name) =>
+    artistNamesMatch(play.artistName, name),
   );
 }
 
@@ -708,7 +772,9 @@ function softTitleKey(name: string) {
   const key = softNormalizeTitle(name)
     // "Personal Jesus - Original Single Version" vs "Personal Jesus - Single Version"
     // "Suno Chanda - Original Soundtrack" vs "Suno Chanda Season 2"
-    .replace(/\b(original|single|album|extended|soundtrack|ost)\b/gu, " ")
+    // "Complicated (Spotify Singles)" vs "Complicated"
+    .replace(/\b(original|single|singles|album|extended|soundtrack|ost)\b/gu, " ")
+    .replace(/\bspotify\b/gu, " ")
     .replace(/\bseason\s*\d+\b/gu, " ")
     // "Kashmir - 1990 Remaster" vs "Kashmir - Remaster"
     .replace(/\b((?:19|20)\d{2})\b/g, " ")

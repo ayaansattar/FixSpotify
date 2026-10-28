@@ -7,7 +7,7 @@ type CountableTrack = {
 };
 
 /** Bump when play-count matching rules change so cached rows recompute. */
-const MATCHER_VERSION = 2;
+const MATCHER_VERSION = 3;
 
 function hashInput(value: string) {
   return createHash("sha256").update(value).digest("hex").slice(0, 24);
@@ -37,18 +37,26 @@ export async function playHistoryVersion() {
   return `${aggregate._count._all}:${aggregate._max.playedAt?.toISOString() ?? "none"}`;
 }
 
+/** Sentinel historyVersion: row is outdated but still servable while it recomputes. */
+const STALE_VERSION = "stale";
+
+/**
+ * Returns cached counts, or null when there is no usable row. `fresh` is false
+ * when play history moved on since the row was written; callers may serve
+ * those counts while recomputing in the background.
+ */
 export async function readPlayCountCache(
   tracks: CountableTrack[],
   since: Date | null,
   withIsrc: boolean,
 ) {
   const cacheKey = playCountCacheKey(tracks, since, withIsrc);
-  const historyVersion = await playHistoryVersion();
-  const cached = await db.playCountCache.findUnique({
-    where: { cacheKey },
-  });
+  const [historyVersion, cached] = await Promise.all([
+    playHistoryVersion(),
+    db.playCountCache.findUnique({ where: { cacheKey } }),
+  ]);
 
-  if (!cached || cached.historyVersion !== historyVersion) {
+  if (!cached) {
     return null;
   }
 
@@ -62,20 +70,24 @@ export async function readPlayCountCache(
     for (const track of tracks) {
       counts.set(track.id, parsed[track.id] ?? 0);
     }
-    return counts;
+    return { counts, fresh: cached.historyVersion === historyVersion };
   } catch {
     return null;
   }
 }
 
+/**
+ * `historyVersion` should be read before computing `counts`, so a sync that
+ * lands mid-compute leaves the row stale instead of marking old counts fresh.
+ */
 export async function writePlayCountCache(
   tracks: CountableTrack[],
   since: Date | null,
   withIsrc: boolean,
   counts: Map<string, number>,
+  historyVersion: string,
 ) {
   const cacheKey = playCountCacheKey(tracks, since, withIsrc);
-  const historyVersion = await playHistoryVersion();
   const payload: Record<string, number> = {};
 
   for (const track of tracks) {
@@ -96,6 +108,14 @@ export async function writePlayCountCache(
   });
 }
 
+/**
+ * Mark every row stale (rather than deleting) so the next page load serves the
+ * previous counts instantly and recomputes in the background. Also covers
+ * artist backfills, which don't change the play count/max used by
+ * playHistoryVersion.
+ */
 export async function invalidatePlayCountCache() {
-  await db.playCountCache.deleteMany();
+  await db.playCountCache.updateMany({
+    data: { historyVersion: STALE_VERSION },
+  });
 }

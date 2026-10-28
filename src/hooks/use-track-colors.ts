@@ -2,7 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { colorFromKey, extractAlbumColor } from "@/lib/track-color";
+import {
+  colorFromKey,
+  extractAlbumColor,
+  getCachedAlbumColor,
+} from "@/lib/track-color";
 
 export type TrackColorSource = {
   id: string;
@@ -10,61 +14,80 @@ export type TrackColorSource = {
   imageUrl?: string | null;
 };
 
+/** Covers decoded in parallel. */
+const CONCURRENCY = 4;
+/** Batch resolved colors into one state update per window (one list render). */
+const FLUSH_MS = 200;
+
 /**
  * Resolves a background color per track: artist/title hash immediately, then
- * upgrades to album-cover color when extraction succeeds.
+ * upgrades to album-cover color when extraction succeeds. Colors are keyed by
+ * image URL, so filtering or searching the list never resets them.
  */
 export function useTrackColors(tracks: TrackColorSource[]) {
-  const fallbacks = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const track of tracks) {
-      map.set(track.id, colorFromKey(track.colorKey || track.id));
-    }
-    return map;
-  }, [tracks]);
-
-  const [resolved, setResolved] = useState<Map<string, string>>(
-    () => new Map(fallbacks),
-  );
+  // Bumped on each batched flush; the actual colors live in the module cache.
+  const [version, setVersion] = useState(0);
 
   useEffect(() => {
-    setResolved(new Map(fallbacks));
-
     let cancelled = false;
-    const uniqueImages = new Map<string, string[]>();
+    let flushTimer: number | null = null;
+    const pending = new Set<string>();
 
     for (const track of tracks) {
-      if (!track.imageUrl) {
-        continue;
+      if (track.imageUrl && getCachedAlbumColor(track.imageUrl) === undefined) {
+        pending.add(track.imageUrl);
       }
-      const ids = uniqueImages.get(track.imageUrl) ?? [];
-      ids.push(track.id);
-      uniqueImages.set(track.imageUrl, ids);
     }
 
-    void (async () => {
-      for (const [imageUrl, trackIds] of uniqueImages) {
-        if (cancelled) {
-          return;
-        }
-        const color = await extractAlbumColor(imageUrl);
-        if (!color || cancelled) {
-          continue;
-        }
-        setResolved((current) => {
-          const next = new Map(current);
-          for (const id of trackIds) {
-            next.set(id, color);
-          }
-          return next;
-        });
+    if (pending.size === 0) {
+      return;
+    }
+
+    const queue = Array.from(pending);
+
+    function scheduleFlush() {
+      if (flushTimer !== null || cancelled) {
+        return;
       }
-    })();
+      flushTimer = window.setTimeout(() => {
+        flushTimer = null;
+        if (!cancelled) {
+          setVersion((current) => current + 1);
+        }
+      }, FLUSH_MS);
+    }
+
+    async function worker() {
+      while (!cancelled && queue.length > 0) {
+        const imageUrl = queue.shift()!;
+        const color = await extractAlbumColor(imageUrl);
+        if (color) {
+          scheduleFlush();
+        }
+      }
+    }
+
+    for (let i = 0; i < CONCURRENCY; i += 1) {
+      void worker();
+    }
 
     return () => {
       cancelled = true;
+      if (flushTimer !== null) {
+        window.clearTimeout(flushTimer);
+      }
     };
-  }, [fallbacks, tracks]);
+  }, [tracks]);
 
-  return resolved;
+  return useMemo(() => {
+    void version;
+    const map = new Map<string, string>();
+    for (const track of tracks) {
+      const albumColor = track.imageUrl
+        ? getCachedAlbumColor(track.imageUrl)
+        : null;
+      map.set(track.id, albumColor ?? colorFromKey(track.colorKey || track.id));
+    }
+    return map;
+  }, [tracks, version]);
 }
