@@ -18,7 +18,15 @@ ENV DATABASE_URL="file:/app/data/prod.db"
 # required because NODE_ENV=production would otherwise skip devDependencies,
 # and the build needs them (Tailwind/PostCSS, TypeScript, Prisma CLI).
 COPY package.json package-lock.json ./
-RUN npm ci --include=dev
+# The host's link to the npm registry occasionally times out (ETIMEDOUT), so
+# retry patiently and keep npm's download cache between builds; a rebuild then
+# only fetches what changed instead of every package again.
+RUN --mount=type=cache,target=/root/.npm \
+  npm ci --include=dev \
+    --fetch-retries=5 \
+    --fetch-retry-mintimeout=20000 \
+    --fetch-retry-maxtimeout=120000 \
+    --fetch-timeout=600000
 
 COPY . .
 
