@@ -355,6 +355,70 @@ export async function addSpotifyQueueTrack(
   );
 }
 
+type SpotifyPlayerState = {
+  device: { id: string | null; type: string } | null;
+  item: { uri: string } | null;
+};
+
+/** Undefined when Spotify reports no active playback (204). */
+async function getSpotifyPlayerState(accessToken: string) {
+  return spotifyFetch<SpotifyPlayerState | undefined>(
+    accessToken,
+    "/me/player",
+  );
+}
+
+async function getSpotifyQueueUris(accessToken: string) {
+  const response = await spotifyFetch<
+    { queue?: Array<{ uri: string } | null> } | undefined
+  >(accessToken, "/me/player/queue");
+
+  return (response?.queue ?? []).map((item) => item?.uri ?? "");
+}
+
+async function skipSpotifyToNext(accessToken: string) {
+  await spotifyFetch<void>(accessToken, "/me/player/next", {
+    method: "POST",
+  });
+}
+
+/** Upper bound on skips past tracks the user had already queued. */
+const MAX_QUEUE_SKIPS = 20;
+
+/**
+ * Plays one track right away. Spotify's phone apps accept
+ * PUT /me/player/play with `uris` (204) but then stop with nothing loaded,
+ * while queueing keeps working. So on a phone that has something loaded,
+ * queue the track and skip to it; the old playlist carries on after it.
+ */
+export async function playSpotifyTrackNow(
+  accessToken: string,
+  trackUri: string,
+) {
+  const player = await getSpotifyPlayerState(accessToken);
+
+  if (player?.device?.type !== "Smartphone" || !player.item) {
+    await startSpotifyPlayback(accessToken, trackUri);
+    return;
+  }
+
+  await addSpotifyQueueTrack(accessToken, trackUri);
+
+  // Queued tracks land after anything the user queued earlier, so skip
+  // up to and onto ours rather than assuming it is next.
+  const upcoming = await getSpotifyQueueUris(accessToken).catch(
+    (): string[] => [],
+  );
+  const skips = Math.min(
+    Math.max(upcoming.indexOf(trackUri), 0) + 1,
+    MAX_QUEUE_SKIPS,
+  );
+
+  for (let i = 0; i < skips; i += 1) {
+    await skipSpotifyToNext(accessToken);
+  }
+}
+
 export async function setSpotifyShuffle(accessToken: string, state: boolean) {
   await spotifyFetch<void>(
     accessToken,

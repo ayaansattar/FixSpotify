@@ -2,7 +2,7 @@ import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 
 import { authOptions } from "@/lib/auth";
-import { SpotifyApiError, startSpotifyPlayback } from "@/lib/spotify";
+import { playSpotifyTrackNow, SpotifyApiError } from "@/lib/spotify";
 import { getValidAccessToken } from "@/lib/tokens";
 
 export async function PUT(request: Request) {
@@ -36,7 +36,7 @@ export async function PUT(request: Request) {
   }
 
   try {
-    await startSpotifyPlayback(accessToken, trackUri);
+    await playSpotifyTrackNow(accessToken, trackUri);
     return NextResponse.json({ playing: true });
   } catch (error) {
     const message =
