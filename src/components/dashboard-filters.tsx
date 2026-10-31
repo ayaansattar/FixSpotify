@@ -18,30 +18,37 @@ type WindowOption = {
 type DashboardFiltersProps = {
   playlists: PlaylistOption[];
   selectedPlaylistId: string;
-  days: number;
-  windows: readonly WindowOption[];
+  /** Page the filters navigate within. */
+  basePath?: string;
+  /** Omit both to hide the listening-window picker. */
+  days?: number;
+  windows?: readonly WindowOption[];
 };
 
 export function DashboardFilters({
   playlists,
   selectedPlaylistId,
+  basePath = "/dashboard",
   days,
   windows,
 }: DashboardFiltersProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
-  function navigate(playlistId: string, selectedDays: number) {
+  function navigate(playlistId: string, selectedDays: number | undefined) {
+    const query = `playlist=${encodeURIComponent(playlistId)}${
+      selectedDays === undefined ? "" : `&days=${selectedDays}`
+    }`;
     startTransition(() => {
-      router.push(
-        `/dashboard?playlist=${encodeURIComponent(playlistId)}&days=${selectedDays}`,
-      );
+      router.push(`${basePath}?${query}`);
     });
   }
 
   return (
     <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
-      <div className="grid gap-4 sm:grid-cols-[1fr_12rem]">
+      <div
+        className={`grid gap-4 ${windows ? "sm:grid-cols-[1fr_12rem]" : ""}`}
+      >
         <div className="grid gap-2 text-sm font-medium">
           Playlist
           <Dropdown
@@ -55,20 +62,22 @@ export function DashboardFilters({
           />
         </div>
 
-        <div className="grid gap-2 text-sm font-medium">
-          Listening window
-          <Dropdown
-            disabled={isPending}
-            onChange={(selectedDays) =>
-              navigate(selectedPlaylistId, Number(selectedDays))
-            }
-            options={windows.map((window) => ({
-              value: String(window.days),
-              label: window.label,
-            }))}
-            value={String(days)}
-          />
-        </div>
+        {windows ? (
+          <div className="grid gap-2 text-sm font-medium">
+            Listening window
+            <Dropdown
+              disabled={isPending}
+              onChange={(selectedDays) =>
+                navigate(selectedPlaylistId, Number(selectedDays))
+              }
+              options={windows.map((window) => ({
+                value: String(window.days),
+                label: window.label,
+              }))}
+              value={String(days)}
+            />
+          </div>
+        ) : null}
       </div>
 
       {isPending ? (

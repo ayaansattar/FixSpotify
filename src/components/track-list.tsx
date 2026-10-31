@@ -17,22 +17,68 @@ type RankedTrack = {
     name: string;
   }>;
   playCount: number;
+  /** ISO timestamp; only set by the last-listened view. */
+  lastPlayedAt?: string | null;
 };
 
 type TrackListProps = {
   playlistId: string;
   playlistName: string;
   initialTracks: RankedTrack[];
+  /** "plays" badges and filters by play count; "lastListened" by last play date. */
+  variant?: "plays" | "lastListened";
 };
 
-const playBuckets = [
-  { value: "1-2", label: "1–2 plays", matches: (count: number) => count >= 1 && count <= 2 },
-  { value: "3-5", label: "3–5 plays", matches: (count: number) => count >= 3 && count <= 5 },
-  { value: "6-10", label: "6–10 plays", matches: (count: number) => count >= 6 && count <= 10 },
-  { value: "10+", label: "10+ plays", matches: (count: number) => count >= 10 },
-  { value: "20+", label: "20+ plays", matches: (count: number) => count >= 20 },
-  { value: "30+", label: "30+ plays", matches: (count: number) => count >= 30 },
+type Bucket = {
+  value: string;
+  label: string;
+  matches: (track: RankedTrack) => boolean;
+};
+
+const playBuckets: Bucket[] = [
+  { value: "1-2", label: "1–2 plays", matches: ({ playCount }) => playCount >= 1 && playCount <= 2 },
+  { value: "3-5", label: "3–5 plays", matches: ({ playCount }) => playCount >= 3 && playCount <= 5 },
+  { value: "6-10", label: "6–10 plays", matches: ({ playCount }) => playCount >= 6 && playCount <= 10 },
+  { value: "10+", label: "10+ plays", matches: ({ playCount }) => playCount >= 10 },
+  { value: "20+", label: "20+ plays", matches: ({ playCount }) => playCount >= 20 },
+  { value: "30+", label: "30+ plays", matches: ({ playCount }) => playCount >= 30 },
 ];
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function daysSinceLastPlay(track: RankedTrack) {
+  return track.lastPlayedAt
+    ? (Date.now() - new Date(track.lastPlayedAt).getTime()) / DAY_MS
+    : null;
+}
+
+function notHeardFor(days: number) {
+  return (track: RankedTrack) => {
+    const age = daysSinceLastPlay(track);
+    return age !== null && age >= days;
+  };
+}
+
+const ageBuckets: Bucket[] = [
+  { value: "2y", label: "Not heard in 2+ years", matches: notHeardFor(730) },
+  { value: "1y", label: "Not heard in 1+ year", matches: notHeardFor(365) },
+  { value: "6m", label: "Not heard in 6+ months", matches: notHeardFor(183) },
+  { value: "3m", label: "Not heard in 3+ months", matches: notHeardFor(91) },
+  {
+    value: "30d",
+    label: "Heard in the last 30 days",
+    matches: (track) => {
+      const age = daysSinceLastPlay(track);
+      return age !== null && age < 30;
+    },
+  },
+];
+
+function formatLastPlayed(value: string) {
+  return new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).format(
+    new Date(value),
+  );
+}
 
 type Notice = {
   kind: "error" | "success";
@@ -43,7 +89,9 @@ export function TrackList({
   playlistId,
   playlistName,
   initialTracks,
+  variant = "plays",
 }: TrackListProps) {
+  const buckets = variant === "lastListened" ? ageBuckets : playBuckets;
   const [tracks, setTracks] = useState(initialTracks);
   const [pendingTrackId, setPendingTrackId] = useState<string | null>(null);
   const [playingTrackId, setPlayingTrackId] = useState<string | null>(null);
@@ -69,9 +117,9 @@ export function TrackList({
   // Memoized so unrelated state (pending/notice) doesn't hand the archive list
   // a new items array, which would re-render every row and redo color work.
   const filterOptions = useMemo(() => {
-    const bucketCounts = playBuckets.map((bucket) => ({
+    const bucketCounts = buckets.map((bucket) => ({
       bucket,
-      count: tracks.filter((track) => bucket.matches(track.playCount)).length,
+      count: tracks.filter((track) => bucket.matches(track)).length,
     }));
 
     return [
@@ -91,13 +139,13 @@ export function TrackList({
           label: `${bucket.label} (${count})`,
         })),
     ];
-  }, [tracks, filter]);
+  }, [tracks, filter, buckets]);
 
   // Typing stays responsive; the (large) list re-filters at lower priority.
   const deferredQuery = useDeferredValue(query);
   const normalizedQuery = deferredQuery.trim().toLowerCase();
   const visibleTracks = useMemo(() => {
-    const activeBucket = playBuckets.find((bucket) => bucket.value === filter);
+    const activeBucket = buckets.find((bucket) => bucket.value === filter);
 
     return tracks.filter((track) => {
       const matchesFilter =
@@ -108,7 +156,7 @@ export function TrackList({
             : filter === "never"
               ? track.playCount === 0
               : activeBucket
-                ? activeBucket.matches(track.playCount)
+                ? activeBucket.matches(track)
                 : true;
       const matchesSearch =
         !normalizedQuery ||
@@ -119,7 +167,7 @@ export function TrackList({
 
       return matchesFilter && matchesSearch;
     });
-  }, [tracks, filter, normalizedQuery]);
+  }, [tracks, filter, normalizedQuery, buckets]);
 
   // One stable item object per track, so filtering reuses them instead of
   // giving every row new props.
@@ -139,7 +187,9 @@ export function TrackList({
                 badge:
                   track.playCount === 0
                     ? "Never played"
-                    : `${track.playCount} ${track.playCount === 1 ? "play" : "plays"}`,
+                    : variant === "lastListened" && track.lastPlayedAt
+                      ? formatLastPlayed(track.lastPlayedAt)
+                      : `${track.playCount} ${track.playCount === 1 ? "play" : "plays"}`,
                 imageUrl: track.imageUrl,
                 colorKey:
                   track.artists.map((artist) => artist.name).join(", ") ||
@@ -148,7 +198,7 @@ export function TrackList({
             ] as const,
         ),
       ),
-    [tracks],
+    [tracks, variant],
   );
   const archiveItems = useMemo(
     () => visibleTracks.map((track) => itemsById.get(track.id)!),

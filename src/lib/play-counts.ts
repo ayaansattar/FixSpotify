@@ -20,6 +20,8 @@ type PlayGroup = {
   artistId: string;
   artistName: string;
   count: number;
+  /** Epoch ms of the newest play in this group (0 when unknown). */
+  lastPlayedAt: number;
 };
 
 /** One Spotify track ID may appear as multiple Play groups after artist backfills. */
@@ -27,7 +29,19 @@ type AggregatedPlay = {
   trackId: string;
   trackName: string;
   count: number;
+  lastPlayedAt: number;
   variants: PlayGroup[];
+};
+
+/**
+ * Every Play row already passed the minimum listen threshold: the history
+ * import drops plays of 30 seconds or less, and Spotify's recently-played
+ * feed only reports plays past that mark. So the newest matched row is the
+ * last time the track was heard for at least the threshold.
+ */
+export type PlayStats = {
+  count: number;
+  lastPlayedAt: Date | null;
 };
 
 /**
@@ -54,8 +68,20 @@ export async function getPlayCounts(
   since: Date | null,
   accessToken?: string | null,
 ) {
+  const stats = await getPlayStats(tracks, since, accessToken);
+  return new Map(
+    Array.from(stats, ([trackId, stat]) => [trackId, stat.count] as const),
+  );
+}
+
+/** Play counts plus last-played time, using the same matching as getPlayCounts. */
+export async function getPlayStats(
+  tracks: CountableTrack[],
+  since: Date | null,
+  accessToken?: string | null,
+) {
   if (tracks.length === 0) {
-    return new Map<string, number>();
+    return new Map<string, PlayStats>();
   }
 
   // Callers pass "now minus N days"; without rounding, every request would
@@ -64,7 +90,7 @@ export async function getPlayCounts(
   const withIsrc = Boolean(accessToken);
   const cached = await readPlayCountCache(tracks, windowStart, withIsrc);
   if (cached?.fresh) {
-    return cached.counts;
+    return cached.stats;
   }
 
   const refresh = refreshPlayCounts(tracks, windowStart, accessToken, withIsrc);
@@ -73,14 +99,14 @@ export async function getPlayCounts(
     refresh.catch((error) => {
       console.warn("[play-counts] Background refresh failed", error);
     });
-    return cached.counts;
+    return cached.stats;
   }
 
   return refresh;
 }
 
 /** One recompute per cache key at a time (page loads + background refresh). */
-const refreshesInFlight = new Map<string, Promise<Map<string, number>>>();
+const refreshesInFlight = new Map<string, Promise<Map<string, PlayStats>>>();
 
 function refreshPlayCounts(
   tracks: CountableTrack[],
@@ -94,9 +120,9 @@ function refreshPlayCounts(
   if (!refresh) {
     refresh = (async () => {
       const historyVersion = await playHistoryVersion();
-      const counts = await computePlayCounts(tracks, since, accessToken);
-      await writePlayCountCache(tracks, since, withIsrc, counts, historyVersion);
-      return counts;
+      const stats = await computePlayStats(tracks, since, accessToken);
+      await writePlayCountCache(tracks, since, withIsrc, stats, historyVersion);
+      return stats;
     })().finally(() => {
       refreshesInFlight.delete(cacheKey);
     });
@@ -112,12 +138,13 @@ function startOfDay(date: Date) {
   return start;
 }
 
-async function computePlayCounts(
+async function computePlayStats(
   tracks: CountableTrack[],
   since: Date | null,
   accessToken?: string | null,
 ) {
   const countByTrack = new Map<string, number>();
+  const lastByTrack = new Map<string, number>();
   const countedPlayIds = new Map<string, Set<string>>();
   const chunkSize = 500;
   const trackIds = tracks.map((track) => track.id);
@@ -139,10 +166,16 @@ async function computePlayCounts(
         ...(since ? { playedAt: { gte: since } } : {}),
       },
       _count: { _all: true },
+      _max: { playedAt: true },
     });
 
     for (const play of playCounts) {
       countByTrack.set(play.trackId, play._count._all);
+      bumpLastPlayed(
+        lastByTrack,
+        play.trackId,
+        play._max.playedAt?.getTime() ?? 0,
+      );
     }
   }
 
@@ -157,6 +190,7 @@ async function computePlayCounts(
       by: ["trackName", "trackId", "artistId", "artistName"],
       where: since ? { playedAt: { gte: since } } : {},
       _count: { _all: true },
+      _max: { playedAt: true },
     })
   ).map((group) => ({
     trackId: group.trackId,
@@ -164,6 +198,7 @@ async function computePlayCounts(
     artistId: group.artistId,
     artistName: group.artistName,
     count: group._count._all,
+    lastPlayedAt: group._max.playedAt?.getTime() ?? 0,
   }));
 
   // Soft-title aliases. Include other playlist track IDs too, so
@@ -310,6 +345,7 @@ async function computePlayCounts(
 
         counted.add(candidate.trackId);
         extra += candidate.count;
+        bumpLastPlayed(lastByTrack, track.id, candidate.lastPlayedAt);
       }
     }
 
@@ -317,7 +353,7 @@ async function computePlayCounts(
   }
 
   if (!accessToken) {
-    return countByTrack;
+    return toPlayStats(tracks, countByTrack, lastByTrack);
   }
 
   // ISRC aliases: same recording, different Spotify IDs / localized titles.
@@ -329,10 +365,39 @@ async function computePlayCounts(
     tracks,
     outsideGroups,
     countByTrack,
+    lastByTrack,
     countedPlayIds,
   );
 
-  return countByTrack;
+  return toPlayStats(tracks, countByTrack, lastByTrack);
+}
+
+function bumpLastPlayed(
+  lastByTrack: Map<string, number>,
+  trackId: string,
+  playedAt: number,
+) {
+  if (playedAt > (lastByTrack.get(trackId) ?? 0)) {
+    lastByTrack.set(trackId, playedAt);
+  }
+}
+
+function toPlayStats(
+  tracks: CountableTrack[],
+  countByTrack: Map<string, number>,
+  lastByTrack: Map<string, number>,
+) {
+  const stats = new Map<string, PlayStats>();
+
+  for (const track of tracks) {
+    const lastPlayedAt = lastByTrack.get(track.id) ?? 0;
+    stats.set(track.id, {
+      count: countByTrack.get(track.id) ?? 0,
+      lastPlayedAt: lastPlayedAt > 0 ? new Date(lastPlayedAt) : null,
+    });
+  }
+
+  return stats;
 }
 
 async function mergeIsrcAliases(
@@ -340,6 +405,7 @@ async function mergeIsrcAliases(
   tracks: CountableTrack[],
   outsideGroups: PlayGroup[],
   countByTrack: Map<string, number>,
+  lastByTrack: Map<string, number>,
   countedPlayIds: Map<string, Set<string>>,
 ) {
   // Always finish never-played tracks first so localized titles (Qeiam/قيام)
@@ -407,7 +473,10 @@ async function mergeIsrcAliases(
     Array.from(candidateIds),
   );
 
-  const countsByIsrc = new Map<string, Array<{ trackId: string; count: number }>>();
+  const countsByIsrc = new Map<
+    string,
+    Array<{ trackId: string; count: number; lastPlayedAt: number }>
+  >();
 
   for (const group of outsideGroups) {
     const isrc = candidateMeta.get(group.trackId)?.isrc;
@@ -420,8 +489,13 @@ async function mergeIsrcAliases(
     const existing = entries.find((entry) => entry.trackId === group.trackId);
     if (existing) {
       existing.count += group.count;
+      existing.lastPlayedAt = Math.max(existing.lastPlayedAt, group.lastPlayedAt);
     } else {
-      entries.push({ trackId: group.trackId, count: group.count });
+      entries.push({
+        trackId: group.trackId,
+        count: group.count,
+        lastPlayedAt: group.lastPlayedAt,
+      });
     }
     countsByIsrc.set(isrc, entries);
   }
@@ -443,6 +517,7 @@ async function mergeIsrcAliases(
 
       counted.add(entry.trackId);
       extra += entry.count;
+      bumpLastPlayed(lastByTrack, track.id, entry.lastPlayedAt);
     }
 
     if (extra > 0) {
@@ -469,12 +544,14 @@ function aggregateByTrackId(groups: PlayGroup[]): AggregatedPlay[] {
         trackId: group.trackId,
         trackName: group.trackName,
         count: group.count,
+        lastPlayedAt: group.lastPlayedAt,
         variants: [group],
       });
       continue;
     }
 
     existing.count += group.count;
+    existing.lastPlayedAt = Math.max(existing.lastPlayedAt, group.lastPlayedAt);
     existing.variants.push(group);
 
     // Prefer a populated artist row's title when the first variant is sparse.

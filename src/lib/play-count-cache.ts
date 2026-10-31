@@ -1,13 +1,14 @@
 import { createHash } from "node:crypto";
 
 import { db } from "@/lib/db";
+import type { PlayStats } from "@/lib/play-counts";
 
 type CountableTrack = {
   id: string;
 };
 
 /** Bump when play-count matching rules change so cached rows recompute. */
-const MATCHER_VERSION = 3;
+const MATCHER_VERSION = 4;
 
 function hashInput(value: string) {
   return createHash("sha256").update(value).digest("hex").slice(0, 24);
@@ -41,7 +42,7 @@ export async function playHistoryVersion() {
 const STALE_VERSION = "stale";
 
 /**
- * Returns cached counts, or null when there is no usable row. `fresh` is false
+ * Returns cached stats, or null when there is no usable row. `fresh` is false
  * when play history moved on since the row was written; callers may serve
  * those counts while recomputing in the background.
  */
@@ -61,37 +62,43 @@ export async function readPlayCountCache(
   }
 
   try {
-    const parsed = JSON.parse(cached.counts) as Record<string, number>;
+    // Each entry is [count, lastPlayedAt epoch ms or 0].
+    const parsed = JSON.parse(cached.counts) as Record<string, [number, number]>;
     if (!parsed || typeof parsed !== "object") {
       return null;
     }
 
-    const counts = new Map<string, number>();
+    const stats = new Map<string, PlayStats>();
     for (const track of tracks) {
-      counts.set(track.id, parsed[track.id] ?? 0);
+      const [count = 0, lastPlayedAt = 0] = parsed[track.id] ?? [];
+      stats.set(track.id, {
+        count,
+        lastPlayedAt: lastPlayedAt > 0 ? new Date(lastPlayedAt) : null,
+      });
     }
-    return { counts, fresh: cached.historyVersion === historyVersion };
+    return { stats, fresh: cached.historyVersion === historyVersion };
   } catch {
     return null;
   }
 }
 
 /**
- * `historyVersion` should be read before computing `counts`, so a sync that
- * lands mid-compute leaves the row stale instead of marking old counts fresh.
+ * `historyVersion` should be read before computing `stats`, so a sync that
+ * lands mid-compute leaves the row stale instead of marking old stats fresh.
  */
 export async function writePlayCountCache(
   tracks: CountableTrack[],
   since: Date | null,
   withIsrc: boolean,
-  counts: Map<string, number>,
+  stats: Map<string, PlayStats>,
   historyVersion: string,
 ) {
   const cacheKey = playCountCacheKey(tracks, since, withIsrc);
-  const payload: Record<string, number> = {};
+  const payload: Record<string, [number, number]> = {};
 
   for (const track of tracks) {
-    payload[track.id] = counts.get(track.id) ?? 0;
+    const stat = stats.get(track.id);
+    payload[track.id] = [stat?.count ?? 0, stat?.lastPlayedAt?.getTime() ?? 0];
   }
 
   await db.playCountCache.upsert({
