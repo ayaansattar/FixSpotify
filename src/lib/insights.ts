@@ -1,15 +1,8 @@
 import { db } from "@/lib/db";
 import { getCachedPlaylistTracks } from "@/lib/playlist-cache";
-import { getPlayCounts } from "@/lib/play-counts";
+import { getPlayCounts, getPlayStats } from "@/lib/play-counts";
 import { getPreferredPlaylists } from "@/lib/playlists";
 import { describeSpotifyError } from "@/lib/spotify";
-
-export type PlaysOverTimeRange = "month" | "year" | "lifetime";
-
-export type PlaysOverTimePoint = {
-  label: string;
-  plays: number;
-};
 
 export type RankMode = "most" | "least";
 
@@ -23,6 +16,23 @@ export type TrackPlayRow = {
   track: string;
   artist: string;
   plays: number;
+};
+
+export type LeastListenedRow = {
+  trackId: string;
+  track: string;
+  artist: string;
+  plays: number;
+  /** ISO timestamp of the last play past the listen threshold. */
+  lastPlayedAt: string | null;
+  listenScore: number;
+};
+
+export type PlaylistLeastListened = {
+  playlistId: string;
+  playlist: string;
+  trackCount: number;
+  rows: LeastListenedRow[];
 };
 
 export type PlaylistHealthRow = {
@@ -51,13 +61,16 @@ export type InsightsData = {
   };
   tracksByPlays: Record<RankMode, TrackPlayRow[]>;
   artistsByPlays: Record<RankMode, ArtistPlayRow[]>;
-  playsOverTime: Record<PlaysOverTimeRange, PlaysOverTimePoint[]>;
   playlistHealth: PlaylistHealthRow[];
+  leastListenedByPlaylist: PlaylistLeastListened[];
 };
 
 const RANK_LIMIT = 15;
 /** Tracks with no plays in this window count as stale for playlist health. */
 const STALE_DAYS = 90;
+/** Days for a track's listen score to halve since its last play. */
+const LISTEN_SCORE_HALF_LIFE_DAYS = 180;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Aggregates listening-history + preferred-playlist cache data for the
@@ -113,10 +126,13 @@ export async function getInsightsData(
     const staleSince = new Date();
     staleSince.setDate(staleSince.getDate() - STALE_DAYS);
 
-    const [countByTrack, recentCountByTrack] = await Promise.all([
-      getPlayCounts(countable, null, accessToken),
+    const [statsByTrack, recentCountByTrack] = await Promise.all([
+      getPlayStats(countable, null, accessToken),
       getPlayCounts(countable, staleSince, accessToken),
     ]);
+    const countByTrack = new Map(
+      Array.from(statsByTrack, ([trackId, stats]) => [trackId, stats.count]),
+    );
 
     const artistAgg = new Map<
       string,
@@ -200,6 +216,51 @@ export async function getInsightsData(
           a.playlist.localeCompare(b.playlist),
       );
 
+    const now = Date.now();
+    const leastListenedByPlaylist = trackLists.map(({ playlist, tracks }) => {
+      const uniquePlaylistTracks = Array.from(
+        new Map(tracks.map((track) => [track.id, track])).values(),
+      );
+      const rows = uniquePlaylistTracks
+        .map((track) => {
+          const stats = statsByTrack.get(track.id);
+          const plays = stats?.count ?? 0;
+          const lastPlayedAt = stats?.lastPlayedAt ?? null;
+
+          return {
+            trackId: track.id,
+            track: track.name,
+            artist:
+              track.artists.map((artist) => artist.name).join(", ") ||
+              "Unknown artist",
+            plays,
+            lastPlayedAt: lastPlayedAt?.toISOString() ?? null,
+            listenScore: listenScore(
+              plays,
+              lastPlayedAt ? (now - lastPlayedAt.getTime()) / DAY_MS : null,
+            ),
+          };
+        })
+        .sort(
+          (a, b) =>
+            a.listenScore - b.listenScore ||
+            a.plays - b.plays ||
+            (a.lastPlayedAt ?? "").localeCompare(b.lastPlayedAt ?? "") ||
+            a.track.localeCompare(b.track),
+        )
+        .map((row) => ({
+          ...row,
+          listenScore: Math.round(row.listenScore * 100) / 100,
+        }));
+
+      return {
+        playlistId: playlist.id,
+        playlist: playlist.name,
+        trackCount: uniquePlaylistTracks.length,
+        rows,
+      } satisfies PlaylistLeastListened;
+    });
+
     const avgPlaylistHealth =
       playlistHealth.length === 0
         ? 0
@@ -228,15 +289,11 @@ export async function getInsightsData(
         a.artist.localeCompare(b.artist),
     );
 
-    const playDates = await db.play.findMany({
-      select: { playedAt: true },
-      orderBy: { playedAt: "asc" },
-    });
-    const playedAts = playDates.map((play) => play.playedAt);
+    const totalPlays = await db.play.count();
 
     return {
       summary: {
-        totalPlays: playDates.length,
+        totalPlays,
         uniquePlaylistTracks: uniqueTracks.length,
         neverPlayed,
         unplayable,
@@ -251,18 +308,31 @@ export async function getInsightsData(
         most: artistsSorted.slice(0, RANK_LIMIT),
         least: [...artistsSorted].reverse().slice(0, RANK_LIMIT),
       },
-      playsOverTime: {
-        month: buildDailySeries(playedAts, 30),
-        year: buildMonthlySeries(playedAts, 12),
-        lifetime: buildLifetimeMonthlySeries(playedAts),
-      },
       playlistHealth,
+      leastListenedByPlaylist,
     };
   } catch (error) {
     return {
       error: describeSpotifyError(error, "Unable to load listening insights."),
     };
   }
+}
+
+/**
+ * Combines how often and how recently a track was heard: log-scaled plays,
+ * halved for every LISTEN_SCORE_HALF_LIFE_DAYS since the last play. Lower is
+ * less listened; never played is 0. So a song binged two years ago ranks
+ * below one played a couple of times this month.
+ */
+function listenScore(plays: number, daysSinceLastPlay: number | null) {
+  if (plays === 0 || daysSinceLastPlay === null) {
+    return 0;
+  }
+
+  return (
+    Math.log2(1 + plays) *
+    0.5 ** (Math.max(0, daysSinceLastPlay) / LISTEN_SCORE_HALF_LIFE_DAYS)
+  );
 }
 
 /**
@@ -324,118 +394,4 @@ function playlistHealthScore({
       ),
     ),
   );
-}
-
-function startOfDay(date: Date) {
-  const next = new Date(date);
-  next.setHours(0, 0, 0, 0);
-  return next;
-}
-
-function startOfMonth(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), 1);
-}
-
-function dayKey(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function monthKey(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  return `${year}-${month}`;
-}
-
-function buildDailySeries(playedAts: Date[], days: number): PlaysOverTimePoint[] {
-  const end = startOfDay(new Date());
-  const start = new Date(end);
-  start.setDate(end.getDate() - (days - 1));
-
-  const counts = new Map<string, number>();
-  for (let i = 0; i < days; i += 1) {
-    const date = new Date(start);
-    date.setDate(start.getDate() + i);
-    counts.set(dayKey(date), 0);
-  }
-
-  for (const playedAt of playedAts) {
-    if (playedAt < start) {
-      continue;
-    }
-    const key = dayKey(playedAt);
-    if (counts.has(key)) {
-      counts.set(key, (counts.get(key) ?? 0) + 1);
-    }
-  }
-
-  return Array.from(counts.entries()).map(([label, plays]) => ({
-    label,
-    plays,
-  }));
-}
-
-function buildMonthlySeries(
-  playedAts: Date[],
-  months: number,
-): PlaysOverTimePoint[] {
-  const end = startOfMonth(new Date());
-  const start = new Date(end);
-  start.setMonth(end.getMonth() - (months - 1));
-
-  const counts = new Map<string, number>();
-  for (let i = 0; i < months; i += 1) {
-    const date = new Date(start);
-    date.setMonth(start.getMonth() + i);
-    counts.set(monthKey(date), 0);
-  }
-
-  for (const playedAt of playedAts) {
-    if (playedAt < start) {
-      continue;
-    }
-    const key = monthKey(playedAt);
-    if (counts.has(key)) {
-      counts.set(key, (counts.get(key) ?? 0) + 1);
-    }
-  }
-
-  return Array.from(counts.entries()).map(([label, plays]) => ({
-    label,
-    plays,
-  }));
-}
-
-function buildLifetimeMonthlySeries(playedAts: Date[]): PlaysOverTimePoint[] {
-  if (playedAts.length === 0) {
-    return [];
-  }
-
-  const start = startOfMonth(playedAts[0]!);
-  const end = startOfMonth(new Date());
-  const months =
-    (end.getFullYear() - start.getFullYear()) * 12 +
-    (end.getMonth() - start.getMonth()) +
-    1;
-
-  const counts = new Map<string, number>();
-  for (let i = 0; i < months; i += 1) {
-    const date = new Date(start);
-    date.setMonth(start.getMonth() + i);
-    counts.set(monthKey(date), 0);
-  }
-
-  for (const playedAt of playedAts) {
-    const key = monthKey(playedAt);
-    if (counts.has(key)) {
-      counts.set(key, (counts.get(key) ?? 0) + 1);
-    }
-  }
-
-  return Array.from(counts.entries()).map(([label, plays]) => ({
-    label,
-    plays,
-  }));
 }
