@@ -237,6 +237,12 @@ jobs:
             edits += a.length - i + b.length - j;
             return edits <= 1;
           }
+          // playedAt is stored as ISO text; compare as dates, not strings.
+          function laterPlay(a, b) {
+            if (!a) return b ?? null;
+            if (!b) return a;
+            return new Date(b) > new Date(a) ? b : a;
+          }
           function aggregateByTrackId(groups) {
             const byTrackId = new Map();
             for (const group of groups) {
@@ -246,11 +252,13 @@ jobs:
                   trackId: group.trackId,
                   trackName: group.trackName,
                   count: group.count,
+                  lastPlayedAt: group.lastPlayedAt,
                   variants: [group],
                 });
                 continue;
               }
               existing.count += group.count;
+              existing.lastPlayedAt = laterPlay(existing.lastPlayedAt, group.lastPlayedAt);
               existing.variants.push(group);
             }
             return Array.from(byTrackId.values());
@@ -273,7 +281,8 @@ jobs:
           }
 
           const playGroups = db.prepare(`
-            SELECT trackId, trackName, artistId, artistName, COUNT(*) AS n
+            SELECT trackId, trackName, artistId, artistName, COUNT(*) AS n,
+              MAX(playedAt) AS lastPlayedAt
             FROM Play
             GROUP BY trackId, trackName, artistId, artistName
           `).all().map((g) => ({
@@ -282,6 +291,7 @@ jobs:
             artistId: g.artistId,
             artistName: g.artistName,
             count: g.n,
+            lastPlayedAt: g.lastPlayedAt,
           }));
           const aggregated = aggregateByTrackId(playGroups);
           const aliasBuckets = new Map();
@@ -309,11 +319,18 @@ jobs:
           } catch {}
 
           function mergedCount(track) {
-            let count = db.prepare("SELECT COUNT(*) AS n FROM Play WHERE trackId = ?").get(track.id).n;
+            const own = db.prepare(
+              "SELECT COUNT(*) AS n, MAX(playedAt) AS lastPlayedAt FROM Play WHERE trackId = ?",
+            ).get(track.id);
+            let count = own.n;
+            let lastPlayedAt = own.lastPlayedAt ?? null;
             const counted = new Set([track.id]);
             const key = softTitleKey(track.name);
-            if (!key) return { count, key, exact: count };
+            if (!key) {
+              return { count, key, exact: count, lastPlayedAt, exactLastPlayedAt: lastPlayedAt };
+            }
             const exact = count;
+            const exactLastPlayedAt = lastPlayedAt;
             for (const candidateKey of aliasKeys) {
               if (!titlesLooselyMatch(key, candidateKey)) continue;
               for (const candidate of aliasBuckets.get(candidateKey) ?? []) {
@@ -350,9 +367,10 @@ jobs:
                 ) continue;
                 counted.add(candidate.trackId);
                 count += candidate.count;
+                lastPlayedAt = laterPlay(lastPlayedAt, candidate.lastPlayedAt);
               }
             }
-            return { count, key, exact };
+            return { count, key, exact, lastPlayedAt, exactLastPlayedAt };
           }
 
           for (const query of queries) {
@@ -384,13 +402,17 @@ jobs:
                 name: hit.name,
                 artists: hit.artistNames.join(", "),
                 exactIdPlays: merged.exact,
+                exactIdLastPlayedAt: merged.exactLastPlayedAt,
                 softKey: merged.key,
                 mergedSoftCount: merged.count,
+                // Matches the app's Last listened / Insights date.
+                mergedLastPlayedAt: merged.lastPlayedAt,
                 relatedPlays: relatedTight.map((g) => ({
                   trackId: g.trackId,
                   name: g.trackName,
                   artist: g.artistName,
                   n: g.count,
+                  lastPlayedAt: g.lastPlayedAt,
                   softKey: softTitleKey(g.trackName),
                 })),
               }, null, 2));
@@ -408,6 +430,7 @@ jobs:
                 name: g.trackName,
                 artist: g.artistName,
                 n: g.count,
+                lastPlayedAt: g.lastPlayedAt,
                 softKey: softTitleKey(g.trackName),
               })), null, 2));
             }
