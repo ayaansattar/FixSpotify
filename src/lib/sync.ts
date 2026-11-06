@@ -14,17 +14,28 @@ export async function syncRecentlyPlayed(
 ): Promise<SyncResult> {
   const response = await getRecentlyPlayed(accessToken);
 
-  const plays = response.items
-    .filter((item) => item.track?.id)
-    .map((item) => ({
-      trackId: item.track!.id,
-      trackName: item.track!.name,
-      artistId: item.track!.artists[0]?.id ?? "unknown",
-      artistName:
-        item.track!.artists.map((artist) => artist.name).filter(Boolean).join(", ") ||
-        "",
-      playedAt: new Date(item.played_at),
-    }));
+  const items = response.items.filter((item) => item.track?.id);
+  // Spotify sometimes returns the same play twice in one response. Inserting
+  // both trips the (trackId, playedAt) unique index and fails the whole batch,
+  // so every sync fails until the duplicate ages out of the 50-play window.
+  const uniqueItems = Array.from(
+    new Map(
+      items.map((item) => [
+        `${item.track!.id}:${new Date(item.played_at).toISOString()}`,
+        item,
+      ]),
+    ).values(),
+  );
+
+  const plays = uniqueItems.map((item) => ({
+    trackId: item.track!.id,
+    trackName: item.track!.name,
+    artistId: item.track!.artists[0]?.id ?? "unknown",
+    artistName:
+      item.track!.artists.map((artist) => artist.name).filter(Boolean).join(", ") ||
+      "",
+    playedAt: new Date(item.played_at),
+  }));
 
   const existing = plays.length
     ? await db.play.findMany({
